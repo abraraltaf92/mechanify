@@ -11,8 +11,9 @@ public enum KeyEvent: Equatable {
 /// Global key listener built on a listen-only CGEventTap.
 ///
 /// Privacy: the tap is listen-only (it cannot change or block input). The callback reads
-/// the key code only to look up the key's left-right position, then drops it; characters
-/// are never requested. Nothing is logged or stored.
+/// the key code only to look up the key's left-right position (and, for modifier keys,
+/// whether it went down or up), then drops it; characters are never requested. Nothing
+/// is logged or stored.
 ///
 /// The tap runs on its own high-priority thread, so a busy main thread (menus, SwiftUI)
 /// can never delay a click. `onKey` is called on that thread.
@@ -20,6 +21,15 @@ public enum KeyEvent: Equatable {
 /// Needs the Input Monitoring permission (System Settings → Privacy & Security).
 public final class KeyListener {
     public var onKey: ((KeyEvent) -> Void)?
+
+    /// Also click for Shift, Control, Option, Command, Fn and Caps Lock. Safe to change
+    /// from any thread while listening.
+    public var includesModifiers: Bool {
+        get { settingsLock.withLock { _includesModifiers } }
+        set { settingsLock.withLock { _includesModifiers = newValue } }
+    }
+    private var _includesModifiers = true
+    private let settingsLock = NSLock()
 
     private var tap: CFMachPort?
     private var runLoop: CFRunLoop?
@@ -39,7 +49,9 @@ public final class KeyListener {
     @discardableResult
     public func start() -> Bool {
         if tap != nil { return true }
-        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue) | CGEventMask(1 << CGEventType.keyUp.rawValue)
+        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+            | CGEventMask(1 << CGEventType.keyUp.rawValue)
+            | CGEventMask(1 << CGEventType.flagsChanged.rawValue)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -87,6 +99,14 @@ public final class KeyListener {
             onKey?(.down(pan: KeyLayout.pan(forKeyCode: event.getIntegerValueField(.keyboardEventKeycode))))
         case .keyUp:
             onKey?(.up(pan: KeyLayout.pan(forKeyCode: event.getIntegerValueField(.keyboardEventKeycode))))
+        case .flagsChanged:
+            // Modifier keys don't send key-down/up; macOS reports a change of the
+            // modifier flags instead. Work out which edge it was from the key's own bit.
+            guard includesModifiers else { return }
+            let code = event.getIntegerValueField(.keyboardEventKeycode)
+            guard let isDown = KeyLayout.modifierIsDown(keyCode: code, flags: event.flags.rawValue) else { return }
+            let pan = KeyLayout.pan(forKeyCode: code)
+            onKey?(isDown ? .down(pan: pan) : .up(pan: pan))
         default:
             break
         }

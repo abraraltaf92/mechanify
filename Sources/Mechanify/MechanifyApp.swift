@@ -9,43 +9,40 @@ struct MechanifyApp: App {
         MenuBarExtra {
             MenuContent(state: state)
         } label: {
-            Image(nsImage: state.enabled && state.hasPermission ? MenuBarIcon.on : MenuBarIcon.off)
+            Image(nsImage: state.isSounding ? MenuBarIcon.on : MenuBarIcon.off)
         }
         .menuBarExtraStyle(.window)
     }
 }
 
+/// The menu-bar panel: the everyday controls. Everything else lives in Settings.
 struct MenuContent: View {
     @ObservedObject var state: AppState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("Mechanify", isOn: $state.enabled)
-                .toggleStyle(.switch)
-                .font(.headline)
+            HStack {
+                Toggle("Mechanify", isOn: $state.enabled)
+                    .toggleStyle(.switch)
+                    .font(.headline)
+                Spacer()
+                Text(GlobalShortcut.display)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .opacity(state.shortcutEnabled ? 1 : 0)
+                    .help("Turns sounds on or off from any app")
+            }
 
             if !state.hasPermission {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label("Input Monitoring permission needed", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text("Turn on Mechanify under Privacy & Security → Input Monitoring. Sounds start automatically once it's on.\n\nAlready on? It belongs to an older build. Select it, remove it with −, then add this app again (or turn it on when it reappears).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("Open Input Monitoring Settings…") { state.openInputMonitoringSettings() }
-                }
+                PermissionNotice(state: state)
+            } else if let paused = state.muteDescription, state.enabled {
+                Label(paused, systemImage: "pause.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Volume").font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Image(systemName: "speaker.fill").foregroundStyle(.secondary)
-                    Slider(value: $state.volume, in: 0...1) { editing in
-                        if !editing { state.preview() }
-                    }
-                    Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
-                }
-            }
+            LabeledSlider(title: "Volume", value: $state.volume, range: 0...1,
+                          low: "speaker.fill", high: "speaker.wave.3.fill") { state.preview() }
 
             if !state.profiles.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -59,57 +56,126 @@ struct MenuContent: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Toggle("Key release sounds", isOn: $state.releases)
-                Toggle("Spatial audio", isOn: $state.spatial)
-                if state.spatial {
-                    HStack {
-                        Text("Width").font(.caption).foregroundStyle(.secondary)
-                        Slider(value: $state.spatialWidth, in: 0.2...1)
-                    }
-                    .padding(.leading, 20)
-                }
-            }
+            LabeledSlider(title: "Tone", value: $state.tone, range: -1...1,
+                          lowText: "Deeper", highText: "Brighter") { state.preview() }
 
-            Toggle("Launch at login", isOn: Binding(
-                get: { state.launchAtLogin },
-                set: { state.setLaunchAtLogin($0) }
-            ))
+            OutputPicker(state: state, compact: true)
 
             if let message = state.errorMessage {
                 Text(message).font(.caption).foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let ms = state.latencyMs, ms > 0 {
-                if ms > 40 {
-                    Label {
-                        Text(String(format: "Output delay ≈ %.0f ms. Bluetooth headphones add this delay; built-in speakers or wired headphones give instant clicks.", ms))
-                            .fixedSize(horizontal: false, vertical: true)
-                    } icon: {
-                        Image(systemName: "headphones")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                } else {
-                    Text(String(format: "Output latency ≈ %.0f ms", ms)).font(.caption2).foregroundStyle(.tertiary)
-                }
-            }
-
             Divider()
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Mechanify™").font(.caption.weight(.semibold))
                     Text("Made with ♥ by Abrar in NYC").font(.caption2).foregroundStyle(.secondary)
                 }
                 .help("Switch recordings: CC0, from Freesound and OpenGameArt (credits in the README)")
                 Spacer()
+                Text("\(state.keysToday.formatted()) today")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .help("Key presses today (\(state.keysTotal.formatted()) in total). Counts only.")
+            }
+            HStack {
+                Button("Settings…") { state.showSettings() }
+                    .keyboardShortcut(",")
+                Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")
             }
         }
         .padding(14)
-        .frame(width: 280)
+        .frame(width: 290)
         .onAppear { state.refreshLatency() }
+    }
+}
+
+struct PermissionNotice: View {
+    @ObservedObject var state: AppState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Input Monitoring permission needed", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text("Turn on Mechanify under Privacy & Security → Input Monitoring. Sounds start automatically once it's on.\n\nAlready on? It belongs to an older build. Select it, remove it with −, then add this app again (or turn it on when it reappears).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Open Input Monitoring Settings…") { state.openInputMonitoringSettings() }
+        }
+    }
+}
+
+/// Choose where clicks play, with the measured delay and a Bluetooth warning.
+struct OutputPicker: View {
+    @ObservedObject var state: AppState
+    var compact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if compact { Text("Play clicks on").font(.caption).foregroundStyle(.secondary) }
+            Picker(compact ? "" : "Play clicks on", selection: $state.outputDeviceUID) {
+                Text("System default").tag("")
+                ForEach(state.outputs) { device in
+                    Text(device.isBluetooth ? "\(device.name) (Bluetooth)" : device.name).tag(device.id)
+                }
+                if state.chosenOutputMissing {
+                    Text("Disconnected device").tag(state.outputDeviceUID)
+                }
+            }
+            .labelsHidden(compact)
+            if state.chosenOutputMissing {
+                Text("That device isn't connected; clicks use the system default until it's back.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let ms = state.latencyMs, ms > 0 {
+                if ms > 40 {
+                    Label {
+                        Text(String(format: "Delay ≈ %.0f ms: Bluetooth adds this. Pick the built-in speakers or wired headphones here for instant clicks, even while your music stays on Bluetooth.", ms))
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: { Image(systemName: "headphones") }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text(String(format: "Delay ≈ %.0f ms", ms)).font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+}
+
+struct LabeledSlider: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var low: String? = nil
+    var high: String? = nil
+    var lowText: String? = nil
+    var highText: String? = nil
+    var onRelease: () -> Void = {}
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            HStack {
+                if let low { Image(systemName: low).foregroundStyle(.secondary) }
+                if let lowText { Text(lowText).font(.caption2).foregroundStyle(.secondary) }
+                Slider(value: $value, in: range) { editing in
+                    if !editing { onRelease() }
+                }
+                if let high { Image(systemName: high).foregroundStyle(.secondary) }
+                if let highText { Text(highText).font(.caption2).foregroundStyle(.secondary) }
+            }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder func labelsHidden(_ hidden: Bool) -> some View {
+        if hidden { labelsHidden() } else { self }
     }
 }

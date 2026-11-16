@@ -52,3 +52,19 @@ and playing every bundled profile. A manual check that typing in other apps clic
 - **Latency:** the tap runs on its own user-interactive thread and calls the engine directly
   (the engine guards its state with a lock); the output unit is asked for a 128-frame buffer.
   The menu shows the measured output delay and points out Bluetooth when it is over 40 ms.
+
+## v1.2
+
+- **Shortcut:** ⌃⌥⌘K via the Carbon hot-key API (no extra permission; sees only that combo).
+- **Output device:** `kAudioOutputUnitProperty_CurrentDevice` on the engine's output unit,
+  chosen by Core Audio UID; a missing device falls back to the system default and is
+  re-applied when it reconnects (device-list listener).
+- **Auto-mute:** polled once a second: `kAudioDevicePropertyDeviceIsRunningSomewhere` on
+  input devices (a status flag, no audio access), and the frontmost app against a user list.
+- **Modifiers:** `flagsChanged` events; edge from the key's own device-specific flag bit, so
+  left and right keys are told apart. Caps Lock counts as a press only.
+- **Numpad / navigation keys:** positioned at the far right.
+- **Tone:** `AVAudioUnitEQ` after the voice source: low shelf 250 Hz (−4 dB × tone), high shelf
+  3 kHz (+6 dB × tone).
+- **Stats:** counts of presses only, saved every 30 s and on quit.
+- **Welcome / Settings windows:** plain `NSWindow`s hosting SwiftUI, opened from the menu-bar app.

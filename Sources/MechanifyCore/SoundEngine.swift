@@ -12,6 +12,9 @@ import AVFoundation
 ///   up to 32 overlap, and the render thread never allocates or waits.
 /// - Each click is placed where the key sits on the keyboard, with equal-power gains
 ///   applied to its own samples, so the position is exact from the first sample.
+/// - A two-band shelf EQ after the mixer sets the tone, from deeper to brighter.
+/// - Clicks can go to a chosen output device (say, the MacBook speakers) instead of the
+///   system default (say, Bluetooth headphones playing music).
 /// - The output device is asked for a small I/O buffer to keep latency down.
 ///
 /// `handle(_:)` is safe to call from the key listener's thread; settings and `load`
@@ -30,6 +33,8 @@ public final class SoundEngine {
 
     private let engine = AVAudioEngine()
     private let mixer: VoiceMixer
+    private let eq = AVAudioUnitEQ(numberOfBands: 2)
+    private var preferredOutputUID: String?
     private var source: AVAudioSourceNode!
     private let lock = NSLock()
     private var bank = ClipBank(presses: [], releases: [])
@@ -58,6 +63,31 @@ public final class SoundEngine {
     public var spatialWidth: Float {
         get { lock.withLock { _spatialWidth } }
         set { lock.withLock { _spatialWidth = max(0, min(1, newValue)) } }
+    }
+
+    /// -1 (deeper: less treble, more body) … 0 (as recorded) … 1 (brighter, crisper).
+    public var tone: Float = 0 {
+        didSet {
+            tone = max(-1, min(1, tone))
+            eq.bands[0].gain = -4 * tone   // low shelf
+            eq.bands[1].gain = 6 * tone    // high shelf
+        }
+    }
+
+    /// Which device plays the clicks: a UID from `AudioDevices.outputs()`, or nil to follow
+    /// the system default. A device that isn't connected falls back to the default until
+    /// it comes back.
+    public var outputDeviceUID: String? {
+        get { lock.withLock { preferredOutputUID } }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            guard newValue != preferredOutputUID else { return }
+            preferredOutputUID = newValue
+            guard !engine.isInManualRenderingMode, !bank.presses.isEmpty else { return }
+            engine.stop()
+            try? start()
+        }
     }
 
     /// 0...1, applied at the output mixer.
@@ -99,7 +129,15 @@ public final class SoundEngine {
             return noErr
         }
         engine.attach(source)
-        engine.connect(source, to: engine.mainMixerNode, format: Self.mixFormat)
+        engine.attach(eq)
+        let low = eq.bands[0], high = eq.bands[1]
+        low.filterType = .lowShelf
+        low.frequency = 250
+        high.filterType = .highShelf
+        high.frequency = 3_000
+        for band in eq.bands { band.gain = 0; band.bypass = false }
+        engine.connect(source, to: eq, format: Self.mixFormat)
+        engine.connect(eq, to: engine.mainMixerNode, format: Self.mixFormat)
 
         // An output device change (AirPods connecting or disconnecting, headphones in or
         // out) stops the engine and can leave nodes wired to the old device. Rebuild.
@@ -119,7 +157,9 @@ public final class SoundEngine {
         defer { lock.unlock() }
         engine.stop()
         engine.disconnectNodeOutput(source)
-        engine.connect(source, to: engine.mainMixerNode, format: Self.mixFormat)
+        engine.disconnectNodeOutput(eq)
+        engine.connect(source, to: eq, format: Self.mixFormat)
+        engine.connect(eq, to: engine.mainMixerNode, format: Self.mixFormat)
         engine.connect(engine.mainMixerNode, to: engine.outputNode, format: nil)
         if !bank.presses.isEmpty { try? start() }
     }
@@ -196,11 +236,31 @@ public final class SoundEngine {
     // Must be called with `lock` held.
     private func start() throws {
         guard !engine.isRunning else { return }
+        applyOutputDevice()
         requestSmallIOBuffer()
         engine.prepare()
         try engine.start()
         // Some devices only accept the buffer size once the unit is running.
         if currentIOBufferFrames() > Self.preferredIOBufferFrames { requestSmallIOBuffer() }
+    }
+
+    /// Points the output unit at the chosen device, or the current system default.
+    private func applyOutputDevice() {
+        guard !engine.isInManualRenderingMode, let unit = engine.outputNode.audioUnit else { return }
+        let chosen = preferredOutputUID.flatMap(AudioDevices.deviceID(forUID:))
+        guard var device = chosen ?? AudioDevices.defaultOutput()?.deviceID else { return }
+        AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                             &device, UInt32(MemoryLayout<AudioDeviceID>.size))
+    }
+
+    /// Name of the device clicks are going to right now.
+    public var currentOutputName: String? {
+        guard !engine.isInManualRenderingMode, let unit = engine.outputNode.audioUnit else { return nil }
+        var device = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &device, &size) == noErr
+        else { return nil }
+        return AudioDevices.outputs().first { $0.deviceID == device }?.name
     }
 
     private func requestSmallIOBuffer() {

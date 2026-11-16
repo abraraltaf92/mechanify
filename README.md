@@ -13,8 +13,16 @@ in any app.
   preloaded, and the output buffer is kept small. The menu shows the measured output
   delay and warns when Bluetooth headphones are adding lag
 - **Key-down and key-up sounds:** separate press and release recordings (releases can be
-  turned off)
-- Sounds on/off, volume, launch at login
+  turned off), plus optional sounds for Shift, Control, Option, Command, Fn and Caps Lock
+- **Tone control** from deeper to brighter
+- **Choose where clicks play:** send them to the built-in speakers even while your music
+  stays on Bluetooth headphones, so clicks stay instant
+- **Auto-mute:** pauses while the microphone is in use (calls, meetings, dictation) and in
+  apps you choose. It only checks whether the microphone is busy; it never listens
+- **⌃⌥⌘K** turns sounds on or off from any app
+- **Typing stats:** key presses today and all time (counts only)
+- A welcome window that walks you through the one-time permission
+- Sounds on/off, volume, launch at login; everyday controls in the menu, the rest in Settings
 - Launch at login
 - No Dock icon; lives in the menu bar
 - Private by design: listen-only event tap; the key code is read only to look up the
@@ -99,6 +107,8 @@ Attach the `.dmg` to a GitHub release tagged `v<version>`.
 | --- | --- | --- |
 | `KeyListener` | `Sources/MechanifyCore/KeyListener.swift` | Listen-only `CGEventTap` for key-down and key-up on its own thread; skips auto-repeat; re-enables itself if macOS disables the tap |
 | `SoundEngine` | `Sources/MechanifyCore/SoundEngine.swift` | Loads profiles (converted once to 48 kHz with the highest-quality converter and cached), places each click by key position, keeps the output buffer small, recovers from output-device changes |
+| `AudioDevices` | `Sources/MechanifyCore/AudioDevices.swift` | Lists outputs, reads whether a microphone is busy (a status flag; audio is never opened), watches for devices coming and going |
+| `AutoMute`, `KeyStats` | `Sources/MechanifyCore/` | When to pause on its own; daily and all-time press counts with midnight roll-over |
 | `VoiceMixer` | `Sources/MechanifyCore/VoiceMixer.swift` | Real-time mixer inside one audio source node: a click starts on the very next 2.7 ms output slice, up to 32 overlap, and the audio thread never allocates or waits |
 | `RoundRobin`, `SamplePicker` | `Sources/MechanifyCore/Selection.swift` | Voice rotation and random sample choice (never the same sample twice in a row) |
 | `KeyLayout` | `Sources/MechanifyCore/KeyLayout.swift` | Key code → left-right stereo position on a Mac keyboard |
