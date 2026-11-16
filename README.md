@@ -10,6 +10,19 @@ in any app.
 - Private by design: listen-only event tap, never reads *which* key was pressed,
   logs and stores nothing
 
+## Install
+
+1. Download `Mechanify-<version>.dmg` from the
+   [latest release](../../releases/latest), open it and drag **Mechanify** into
+   **Applications**.
+2. Open Mechanify. It isn't signed with an Apple Developer ID, so macOS blocks the first
+   launch: click **Done**, then go to **System Settings → Privacy & Security**, scroll down
+   and click **Open Anyway** next to Mechanify. You only do this once.
+3. Allow **Input Monitoring** when asked (or turn on Mechanify under System Settings →
+   Privacy & Security → Input Monitoring). Clicks start within a couple of seconds.
+
+Mechanify lives in the menu bar (the keycap icon), not the Dock. Requires macOS 14 or later.
+
 ## Build and run
 
 Requires macOS 14+ and the Swift toolchain (Xcode or just the Command Line Tools).
@@ -43,6 +56,16 @@ stale grant: `tccutil reset ListenEvent local.keyboardsounds`, then relaunch and
 ```bash
 scripts/test.sh
 ```
+
+## Releasing
+
+Bump `version` in `scripts/build-app.sh`, then:
+
+```bash
+scripts/package-dmg.sh   # builds dist/Mechanify-<version>.dmg and its SHA-256
+```
+
+Attach the `.dmg` to a GitHub release tagged `v<version>`.
 
 ## How it works
 
@@ -80,3 +103,12 @@ scripts/make-profiles.sh "<unicae pack>/Single Keys" <folder with the Freesound 
 
 `scripts/slice-hits.py` finds each keystroke in a typing recording, skips releases and
 clips that overlap the next key, and keeps the most even-sounding presses.
+
+## License
+
+Code: [MIT](LICENSE) © 2026 Abrar Altaf Lone. Switch recordings: CC0 1.0, by the authors
+credited above.
+
+Cherry MX and Gateron are trademarks of their respective owners. Switch names are used
+only to describe which switch a recording comes from; Mechanify is not affiliated with or
+endorsed by them.
