@@ -36,14 +36,15 @@ public final class KeyListener {
         set { settingsLock.withLock { _includesModifiers = newValue } }
     }
 
-    /// Keyboard IDs that make no sound.
-    public var silencedKeyboards: Set<String> {
-        get { settingsLock.withLock { _silenced } }
-        set { settingsLock.withLock { _silenced = newValue } }
+    /// Keyboard IDs that click. Any other keyboard is quiet, including one typing for the
+    /// first time, so a newly connected mechanical keyboard never doubles its own sound.
+    public var audibleKeyboards: Set<String> {
+        get { settingsLock.withLock { _audible } }
+        set { settingsLock.withLock { _audible = newValue } }
     }
 
     private var _includesModifiers = true
-    private var _silenced: Set<String> = []
+    private var _audible: Set<String> = [KeyboardInfo.builtInID]
     private let settingsLock = NSLock()
 
     // Listener-thread state.
@@ -178,8 +179,8 @@ public final class KeyListener {
             DispatchQueue.main.async { callback?(keyboard) }
         }
 
-        let (modifiers, silenced) = settingsLock.withLock { (_includesModifiers, _silenced) }
-        guard !silenced.contains(keyboard.id) else { return }
+        let (modifiers, audible) = settingsLock.withLock { (_includesModifiers, _audible) }
+        guard audible.contains(keyboard.id) else { return }
         guard modifiers || !HIDKeys.modifierKeyCodes.contains(code) else { return }
         let pan = KeyLayout.pan(forKeyCode: code)
         onKey?(pressed ? .down(pan: pan) : .up(pan: pan))

@@ -10,6 +10,7 @@ private let mech = KeyboardInfo(id: "1234:5678:SN1", name: "Keychron K2", isBuil
 
 private func recording(_ setup: (KeyListener) -> Void = { _ in }) -> (KeyListener, () -> [KeyEvent]) {
     let listener = KeyListener()
+    listener.audibleKeyboards = [laptop.id, mech.id]   // both click unless a test says otherwise
     let box = Box()
     listener.onKey = { box.events.append($0) }
     setup(listener)
@@ -41,13 +42,13 @@ private final class Box: @unchecked Sendable { var events: [KeyEvent] = []; var 
 }
 
 @Test func silencedKeyboardMakesNoSoundOthersStillDo() {
-    let (listener, seen) = recording { $0.silencedKeyboards = [mech.id] }
+    let (listener, seen) = recording { $0.audibleKeyboards = [laptop.id] }
     listener.process(page: 0x07, usage: 0x04, pressed: true, keyboard: mech)
     listener.process(page: 0x07, usage: 0x04, pressed: false, keyboard: mech)
     #expect(seen().isEmpty, "the mechanical keyboard stays quiet")
     listener.process(page: 0x07, usage: 0x04, pressed: true, keyboard: laptop)
     #expect(seen().count == 1, "the laptop keyboard still clicks, even with the same key")
-    listener.silencedKeyboards = []
+    listener.audibleKeyboards = [laptop.id, mech.id]
     listener.process(page: 0x07, usage: 0x05, pressed: true, keyboard: mech)
     #expect(seen().count == 2, "turning it back on works immediately")
 }
@@ -85,7 +86,7 @@ private final class Box: @unchecked Sendable { var events: [KeyEvent] = []; var 
 
 @Test func silencedKeyboardsAreStillAnnounced() async {
     let listener = KeyListener()
-    listener.silencedKeyboards = [mech.id]
+    listener.audibleKeyboards = [laptop.id]
     let box = Box()
     listener.onKeyboardTyped = { box.keyboards.append($0) }
     listener.process(page: 0x07, usage: 0x04, pressed: true, keyboard: mech)
@@ -171,6 +172,41 @@ private final class Box: @unchecked Sendable { var events: [KeyEvent] = []; var 
     #expect(noSerial.name == "Keyboard" && noSerial.id == "1:2:Keyboard")
 }
 
+@Test func aNewKeyboardIsQuietFromItsFirstKeyWhileTheLaptopClicks() {
+    let listener = KeyListener()   // defaults: only the built-in keyboard clicks
+    var seen: [KeyEvent] = []
+    listener.onKey = { seen.append($0) }
+    listener.process(page: 0x07, usage: 0x04, pressed: true, keyboard: mech)
+    listener.process(page: 0x07, usage: 0x04, pressed: false, keyboard: mech)
+    #expect(seen.isEmpty, "a keyboard Mechanify has never seen makes no sound, not even once")
+    listener.process(page: 0x07, usage: 0x04, pressed: true, keyboard: laptop)
+    #expect(seen.count == 1, "the MacBook keyboard clicks")
+}
+
+@Test func externalKeyboardsStartQuietBuiltInStartsOn() {
+    var prefs = KeyboardPreferences()
+    prefs.remember(laptop)
+    prefs.remember(mech)
+    #expect(!prefs.isSilenced(laptop.id) && prefs.isSilenced(mech.id))
+    #expect(prefs.audible == [laptop.id])
+    #expect(!prefs.hasChoice(mech.id), "no choice yet: the menu offers to turn it on")
+    prefs.setSounds(true, for: mech.id)
+    #expect(prefs.audible == [laptop.id, mech.id])
+    prefs.setSounds(false, for: laptop.id)
+    #expect(prefs.audible == [mech.id], "the built-in keyboard can be switched off too")
+}
+
+@Test func settingsFromTheFirst13BuildAreMigrated() throws {
+    // Saved before external keyboards defaulted to quiet: a deny list, here with nothing in it.
+    let old = #"{"known":[{"id":"built-in","name":"Built-in keyboard","isBuiltIn":true},{"id":"1452:591:DC","name":"Keychron K8","isBuiltIn":false}],"silenced":[]}"#
+    let prefs = try JSONDecoder().decode(KeyboardPreferences.self, from: Data(old.utf8))
+    #expect(prefs.isSilenced("1452:591:DC"), "the Keychron becomes quiet without the user doing anything")
+    #expect(!prefs.isSilenced("built-in"))
+    let silencedOld = #"{"known":[],"silenced":["built-in"]}"#
+    let explicit = try JSONDecoder().decode(KeyboardPreferences.self, from: Data(silencedOld.utf8))
+    #expect(explicit.isSilenced("built-in"), "an explicit old choice is kept")
+}
+
 @Test func keyboardChoicesAreRememberedAndCanBeUndone() throws {
     var prefs = KeyboardPreferences()
     #expect(prefs.remember(mech) == true, "first time: ask")
@@ -188,8 +224,9 @@ private final class Box: @unchecked Sendable { var events: [KeyEvent] = []; var 
     #expect(!prefs.isSilenced(mech.id))
     prefs.setSounds(false, for: mech.id)
     prefs.forget(mech.id)
-    #expect(!prefs.isKnown(mech.id) && !prefs.isSilenced(mech.id), "forgetting clears the choice")
+    #expect(!prefs.isKnown(mech.id) && !prefs.hasChoice(mech.id), "forgetting clears the choice")
     #expect(prefs.remember(mech) == true, "and it's asked about again")
+    #expect(prefs.isSilenced(mech.id), "and starts quiet again")
 }
 
 @Test func renamedKeyboardKeepsItsChoice() {

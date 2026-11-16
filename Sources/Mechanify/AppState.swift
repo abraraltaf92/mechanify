@@ -68,7 +68,7 @@ final class AppState: ObservableObject {
         engine.outputDeviceUID = outputDeviceUID.isEmpty ? nil : outputDeviceUID
         listener.includesModifiers = modifiers
         keyboards = (try? JSONDecoder().decode(KeyboardPreferences.self, from: keyboardsStorage)) ?? KeyboardPreferences()
-        listener.silencedKeyboards = keyboards.silenced
+        listener.audibleKeyboards = keyboards.audible
         applySpatial()
         applyEnabled()
         // A saved choice can name a profile that no longer ships (e.g. after an update).
@@ -189,8 +189,9 @@ final class AppState: ObservableObject {
     // MARK: Keyboards
 
     private func keyboardTyped(_ keyboard: KeyboardInfo) {
-        if keyboards.remember(keyboard) {
-            newKeyboard = keyboard   // first time ever: ask in the menu
+        // First time ever, and no choice yet: it's quiet by default; offer to turn it on.
+        if keyboards.remember(keyboard), !keyboards.hasChoice(keyboard.id) {
+            newKeyboard = keyboard
         }
         saveKeyboards()
     }
@@ -209,7 +210,7 @@ final class AppState: ObservableObject {
     func dismissNewKeyboard() { newKeyboard = nil }
 
     private func saveKeyboards() {
-        listener.silencedKeyboards = keyboards.silenced
+        listener.audibleKeyboards = keyboards.audible
         keyboardsStorage = (try? JSONEncoder().encode(keyboards)) ?? Data()
     }
 
@@ -270,6 +271,8 @@ final class AppState: ObservableObject {
         let seconds = args.indices.contains(i + 1) ? Double(args[i + 1]) ?? 15 : 15
         print("diagnose: listening for \(Int(seconds)) s, permission \(hasPermission), profile \(profileID), output \(currentOutputName ?? "?"), muted \(muteDescription ?? "no")")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+            print("diagnose: keyboards that click: " + keyboards.known.filter { !keyboards.isSilenced($0.id) }.map(\.name).joined(separator: ", ")
+                  + " | quiet: " + keyboards.known.filter { keyboards.isSilenced($0.id) }.map(\.name).joined(separator: ", "))
             print("diagnose: keyboards open: " + listener.connectedKeyboards.map { "\($0.name)\($0.isBuiltIn ? " (built-in)" : "")" }.joined(separator: ", "))
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [self] in

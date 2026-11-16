@@ -106,13 +106,13 @@ struct NewKeyboardBanner: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("New keyboard: \(keyboard.name)", systemImage: "keyboard.badge.ellipsis")
                 .font(.callout.weight(.semibold))
-            Text("Play sounds when you type on it? Turn this off for a mechanical keyboard that already clicks.")
+            Text("It's quiet for now, in case it already makes its own sound (like a mechanical keyboard). Turn sounds on if it's a quiet one.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button("Play Sounds") { state.setSounds(true, for: keyboard.id) }
-                    .keyboardShortcut(.defaultAction)
                 Button("Keep It Quiet") { state.setSounds(false, for: keyboard.id) }
+                    .keyboardShortcut(.defaultAction)
+                Button("Play Sounds on It") { state.setSounds(true, for: keyboard.id) }
             }
             .controlSize(.small)
         }

@@ -43,7 +43,7 @@ struct SettingsView: View {
                         }
                     }
                 }
-                Text("Turn a keyboard off if it already makes its own sound, like a mechanical one. New keyboards are added the first time you type on them, and each choice is remembered.")
+                Text("The built-in keyboard clicks; other keyboards start quiet, since they often make their own sound (like a mechanical one). Turn on any that are quiet. New keyboards appear here the first time you type on them, and each choice is remembered.")
                     .settingsNote()
             }
 
