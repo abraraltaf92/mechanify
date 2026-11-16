@@ -49,11 +49,11 @@ struct MenuContent: View {
 
             if !state.profiles.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Sound").font(.caption).foregroundStyle(.secondary)
-                    Picker("Sound", selection: $state.profileID) {
+                    Text("Switch").font(.caption).foregroundStyle(.secondary)
+                    Picker("Switch", selection: $state.profileID) {
                         ForEach(state.profiles) { Text($0.displayName).tag($0.id) }
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.radioGroup)
                     .labelsHidden()
                     .onChange(of: state.profileID) { state.preview() }
                 }
@@ -71,7 +71,7 @@ struct MenuContent: View {
 
             Divider()
             HStack {
-                Text("Sounds: CC0, unicaegames").font(.caption2).foregroundStyle(.tertiary)
+                Text("Sounds: CC0 (Freesound, OpenGameArt)").font(.caption2).foregroundStyle(.tertiary)
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")

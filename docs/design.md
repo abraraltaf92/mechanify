@@ -22,9 +22,11 @@ with an on/off toggle, volume, a choice of sound profiles and launch at login.
   `AVAudioPCMBuffer`s up front, 12 always-running `AVAudioPlayerNode`s used round-robin.
   A random sample per press (never the same twice in a row), slight random gain. Engine restarts
   on `AVAudioEngineConfigurationChange` (output device change).
-- **Sounds:** CC0 "Keyboard Soundpack #1" by unicaegames (OpenGameArt). Three profiles derived
-  with ffmpeg: Natural (as recorded), Deep (pitched down, low-passed), Crisp (pitched up,
-  brighter). Leading silence (up to ~55 ms in the raw files) is trimmed to keep latency low.
+- **Sounds:** CC0 recordings of real switches from Freesound (Cherry MX Clear, Cherry MX Red,
+  Gateron Black, Cherry MX Blue) plus the CC0 unicaegames pack (Classic). Typing recordings are
+  cut into single presses by `scripts/slice-hits.py`. Leading silence (up to ~55 ms in raw
+  files) is trimmed to keep latency low. The v1 synthetic Deep/Crisp variants were dropped
+  in favour of real switches. Commercial apps' sounds are deliberately not used.
 - **Settings:** `UserDefaults` via `@AppStorage`: enabled, volume, profile.
 - **Launch at login:** `SMAppService.mainApp`.
 

@@ -43,16 +43,16 @@ struct SeededGenerator: RandomNumberGenerator {
 @Test func discoverFindsWavFoldersInPreferredOrder() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    for (folder, files) in [("crisp", ["b.wav", "a.wav"]), ("natural", ["x.wav"]), ("custom", ["k.WAV"]), ("empty", ["notes.txt"])] {
+    for (folder, files) in [("Classic", ["b.wav", "a.wav"]), ("Cherry MX Red", ["x.wav"]), ("custom", ["k.WAV"]), ("empty", ["notes.txt"])] {
         let dir = root.appendingPathComponent(folder)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         for f in files { FileManager.default.createFile(atPath: dir.appendingPathComponent(f).path, contents: Data()) }
     }
 
     let profiles = SoundProfile.discover(in: root)
-    #expect(profiles.map(\.id) == ["natural", "crisp", "custom"])
+    #expect(profiles.map(\.id) == ["Cherry MX Red", "Classic", "custom"])
     #expect(profiles[1].samples.map(\.lastPathComponent) == ["a.wav", "b.wav"])
-    #expect(profiles[0].displayName == "Natural")
+    #expect(profiles[0].displayName == "Cherry MX Red")
 }
 
 @Test func bundledProfilesDecodeAndPlay() throws {
@@ -61,11 +61,11 @@ struct SeededGenerator: RandomNumberGenerator {
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Resources/Profiles")
     let profiles = SoundProfile.discover(in: root)
-    #expect(profiles.map(\.id) == ["natural", "deep", "crisp"])
+    #expect(profiles.map(\.id) == SoundProfile.preferredOrder)
     let engine = SoundEngine()
     engine.volume = 0
     for profile in profiles {
-        #expect(profile.samples.count == 32)
+        #expect(profile.samples.count >= 9)
         try engine.load(profile)
         engine.playClick()
     }

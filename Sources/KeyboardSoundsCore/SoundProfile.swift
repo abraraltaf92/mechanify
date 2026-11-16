@@ -1,15 +1,17 @@
 import Foundation
 
-/// A sound profile is a folder of WAV files; the folder name is its id.
+/// A sound profile is a folder of WAV files; the folder name is its id and display name.
 public struct SoundProfile: Identifiable, Hashable {
+    public static let preferredOrder = ["Cherry MX Clear", "Cherry MX Red", "Gateron Black", "Cherry MX Blue", "Classic"]
+
     public let id: String
     public let samples: [URL]
 
-    public var displayName: String { id.prefix(1).uppercased() + id.dropFirst() }
+    public var displayName: String { id }
 
     /// Finds every subfolder of `directory` that holds at least one .wav file.
     /// Profiles are returned in `preferredOrder` first, then alphabetically.
-    public static func discover(in directory: URL, preferredOrder: [String] = ["natural", "deep", "crisp"]) -> [SoundProfile] {
+    public static func discover(in directory: URL, preferredOrder: [String] = SoundProfile.preferredOrder) -> [SoundProfile] {
         let fm = FileManager.default
         guard let folders = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey]) else {
             return []

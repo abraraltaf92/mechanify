@@ -8,7 +8,7 @@ import SwiftUI
 final class AppState: ObservableObject {
     @AppStorage("enabled") var enabled = true { didSet { objectWillChange.send() } }
     @AppStorage("volume") var volume = 0.6 { didSet { engine.volume = Float(volume) } }
-    @AppStorage("profile") var profileID = "natural" { didSet { loadProfile() } }
+    @AppStorage("profile") var profileID = "Cherry MX Clear" { didSet { loadProfile() } }
 
     @Published private(set) var hasPermission = KeyListener.hasPermission
     @Published private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -23,7 +23,12 @@ final class AppState: ObservableObject {
         let profilesDir = Bundle.main.resourceURL?.appendingPathComponent("Profiles")
         profiles = profilesDir.map { SoundProfile.discover(in: $0) } ?? []
         engine.volume = Float(volume)
-        loadProfile()
+        // A saved choice can name a profile that no longer ships (e.g. after an update).
+        if let first = profiles.first, !profiles.contains(where: { $0.id == profileID }) {
+            profileID = first.id  // didSet loads it
+        } else {
+            loadProfile()
+        }
 
         listener.onKeyDown = { [weak self] in
             MainActor.assumeIsolated {
