@@ -1,29 +1,37 @@
 #!/usr/bin/env python3
-"""Cut a typing recording into single key hits (Python standard library only).
+"""Find single key presses and releases in a typing recording (standard library only).
 
-Input must be mono 16-bit PCM WAV (make-profiles.sh converts with ffmpeg first).
-Finds onsets (a loud frame after a quiet stretch), cuts each hit from 2 ms before the
-onset until the next hit or MAX_MS, drops quiet onsets (mostly key releases), then keeps
-up to --count hits whose loudness is closest to typical, so the set sounds even.
-Each hit is peak-normalised to a shared level and given a short fade-out.
+Analyses a mono 16-bit WAV copy of the recording and prints a cut list; make-profiles.sh
+then cuts each clip from the ORIGINAL file at its native sample rate and bit depth, so
+the analysis copy's lower quality never reaches the app.
 
-usage: slice-hits.py INPUT.wav OUTPUT_DIR [--count 24] [--max-ms 180] [--prefix key]
+Output (times in seconds):
+    gain_db <dB that brings a typical press to about -4 dBFS>
+    press <start> <duration> <gain dB>
+    release <start> <duration> <gain dB>
+
+A press is a loud onset after a quiet stretch whose peak comes early. A release is the
+same shape, much quieter (the key springing back up). Clips that catch an overlapping
+keystroke are cut short or skipped.
+
+usage: slice-hits.py ANALYSIS.wav [--presses 24] [--releases 16] [--max-ms 160]
 """
 import argparse
 import array
-import os
+import math
 import sys
 import wave
 
 FRAME_MS = 1
 QUIET_BEFORE_MS = 25
-MIN_HIT_MS = 60
+MIN_PRESS_MS = 60
+MIN_RELEASE_MS = 35
 PRE_ROLL_MS = 2
-FADE_MS = 15
-TARGET_PEAK = 0.63  # about -4 dBFS
 MAX_PEAK_MS = 30
 SECOND_HIT_AFTER_MS = 35
 SECOND_HIT_RATIO = 0.4
+TARGET_PEAK = 0.63  # about -4 dBFS
+CEILING = 0.89  # about -1 dBFS: no clip may peak above this
 
 
 def read_mono16(path):
@@ -37,33 +45,23 @@ def read_mono16(path):
     return rate, data
 
 
-def write_mono16(path, rate, samples):
-    out = array.array("h", samples)
-    if sys.byteorder == "big":
-        out.byteswap()
-    with wave.open(path, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(rate)
-        w.writeframes(out.tobytes())
-
-
 def percentile(values, q):
     s = sorted(values)
     return s[min(len(s) - 1, int(q * len(s)))]
 
 
 def find_hits(rate, data, max_ms):
+    """Returns (peak, start_sample, length) for every clean onset."""
     frame = max(1, rate * FRAME_MS // 1000)
     peaks = [max(map(abs, data[i:i + frame]), default=0) for i in range(0, len(data), frame)]
     floor = percentile(peaks, 0.2)
-    threshold = max(floor * 8, max(peaks) * 0.06, 1)
+    threshold = max(floor * 6, max(peaks) * 0.03, 1)
     quiet = QUIET_BEFORE_MS // FRAME_MS
 
     onsets = []
     for i in range(quiet, len(peaks)):
         if peaks[i] >= threshold and all(p < threshold * 0.5 for p in peaks[i - quiet:i]):
-            if not onsets or (i - onsets[-1]) * FRAME_MS >= MIN_HIT_MS:
+            if not onsets or (i - onsets[-1]) * FRAME_MS >= MIN_RELEASE_MS:
                 onsets.append(i)
 
     hits = []
@@ -73,34 +71,27 @@ def find_hits(rate, data, max_ms):
         if n + 1 < len(onsets):
             limit = min(limit, (onsets[n + 1] - 5) * frame)
         seg = data[start:limit]
-        if len(seg) * 1000 // rate < MIN_HIT_MS:
+        if not seg:
             continue
-        # A press peaks within a few ms. A late peak means the clip caught an
-        # overlapping keystroke instead, so skip it.
         peak_at = max(range(len(seg)), key=lambda j: abs(seg[j]))
         if peak_at * 1000 // rate > MAX_PEAK_MS:
-            continue
-        # Fast typing leaves no quiet gap before the next key: cut where a second
-        # hit rises out of the decay.
+            continue  # caught an overlapping keystroke
         peak = abs(seg[peak_at])
-        rise_from = rate * SECOND_HIT_AFTER_MS // 1000
-        for j in range(rise_from, len(seg), frame):
+        length = len(seg)
+        for j in range(rate * SECOND_HIT_AFTER_MS // 1000, len(seg), frame):
             if max(map(abs, seg[j:j + frame])) > peak * SECOND_HIT_RATIO:
-                seg = seg[:max(0, j - 5 * frame)]
+                length = max(0, j - 5 * frame)
                 break
-        if len(seg) * 1000 // rate < MIN_HIT_MS:
-            continue
-        hits.append((peak, seg))
+        hits.append((peak, start, length))
     return hits
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("input")
-    ap.add_argument("outdir")
-    ap.add_argument("--count", type=int, default=24)
-    ap.add_argument("--max-ms", type=int, default=180)
-    ap.add_argument("--prefix", default="key")
+    ap.add_argument("--presses", type=int, default=24)
+    ap.add_argument("--releases", type=int, default=16)
+    ap.add_argument("--max-ms", type=int, default=160)
     args = ap.parse_args()
 
     rate, data = read_mono16(args.input)
@@ -108,25 +99,27 @@ def main():
     if not hits:
         sys.exit(f"{args.input}: no hits found")
 
-    # Releases and grazes are much quieter than presses: drop them.
-    loud = percentile([p for p, _ in hits], 0.8)
-    presses = [h for h in hits if h[0] >= loud * 0.45]
-    typical = percentile([p for p, _ in presses], 0.5)
-    chosen = sorted(presses, key=lambda h: abs(h[0] - typical))[: args.count]
+    loud = percentile([p for p, _, _ in hits], 0.8)
+    min_press = rate * MIN_PRESS_MS // 1000
+    min_release = rate * MIN_RELEASE_MS // 1000
+    presses = [h for h in hits if h[0] >= loud * 0.45 and h[2] >= min_press]
+    releases = [h for h in hits if loud * 0.08 <= h[0] < loud * 0.45 and h[2] >= min_release]
 
-    os.makedirs(args.outdir, exist_ok=True)
-    fade = rate * FADE_MS // 1000
-    gain = TARGET_PEAK * 32767 / typical
-    for k, (_, seg) in enumerate(chosen, 1):
-        out = []
-        n = len(seg)
-        for j, s in enumerate(seg):
-            v = s * gain
-            if j >= n - fade:
-                v *= (n - j) / fade
-            out.append(int(max(-32767, min(32767, v))))
-        write_mono16(os.path.join(args.outdir, f"{args.prefix}-{k:02d}.wav"), rate, out)
-    print(f"{os.path.basename(args.input)}: {len(hits)} onsets, {len(presses)} presses, kept {len(chosen)}")
+    typical = percentile([p for p, _, _ in presses], 0.5)
+    chosen = sorted(presses, key=lambda h: abs(h[0] - typical))[: args.presses]
+    typical_release = percentile([p for p, _, _ in releases], 0.5) if releases else 0
+    chosen_releases = sorted(releases, key=lambda h: abs(h[0] - typical_release))[: args.releases]
+
+    # One gain for every clip, so releases stay as much quieter as they really are,
+    # capped per clip so the loudest presses never clip.
+    gain_db = 20 * math.log10(TARGET_PEAK * 32767 / typical)
+    print(f"gain_db {gain_db:.2f}")
+    for kind, group in (("press", chosen), ("release", chosen_releases)):
+        for peak, start, length in sorted(group, key=lambda h: h[1]):
+            clip_gain = min(gain_db, 20 * math.log10(CEILING * 32767 / peak))
+            print(f"{kind} {start / rate:.5f} {length / rate:.5f} {clip_gain:.2f}")
+    print(f"{args.input}: {len(hits)} onsets, kept {len(chosen)} presses, "
+          f"{len(chosen_releases)} releases", file=sys.stderr)
 
 
 if __name__ == "__main__":

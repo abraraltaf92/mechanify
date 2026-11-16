@@ -59,6 +59,18 @@ struct MenuContent: View {
                 }
             }
 
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle("Key release sounds", isOn: $state.releases)
+                Toggle("Spatial audio", isOn: $state.spatial)
+                if state.spatial {
+                    HStack {
+                        Text("Width").font(.caption).foregroundStyle(.secondary)
+                        Slider(value: $state.spatialWidth, in: 0.2...1)
+                    }
+                    .padding(.leading, 20)
+                }
+            }
+
             Toggle("Launch at login", isOn: Binding(
                 get: { state.launchAtLogin },
                 set: { state.setLaunchAtLogin($0) }
@@ -67,6 +79,21 @@ struct MenuContent: View {
             if let message = state.errorMessage {
                 Text(message).font(.caption).foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let ms = state.latencyMs, ms > 0 {
+                if ms > 40 {
+                    Label {
+                        Text(String(format: "Output delay ≈ %.0f ms. Bluetooth headphones add this delay; built-in speakers or wired headphones give instant clicks.", ms))
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "headphones")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text(String(format: "Output latency ≈ %.0f ms", ms)).font(.caption2).foregroundStyle(.tertiary)
+                }
             }
 
             Divider()
@@ -83,5 +110,6 @@ struct MenuContent: View {
         }
         .padding(14)
         .frame(width: 280)
+        .onAppear { state.refreshLatency() }
     }
 }

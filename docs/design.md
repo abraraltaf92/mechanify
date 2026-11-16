@@ -39,3 +39,16 @@ The profile format (a folder of WAVs) leaves room to add these later.
 
 Unit tests (Swift Testing) for voice rotation, sample picking, profile discovery, and decoding
 and playing every bundled profile. A manual check that typing in other apps clicks with no lag.
+
+## v1.1
+
+- **Hi-fi:** `slice-hits.py` only analyses; ffmpeg cuts every clip from the original file at
+  its native rate (MX Red stays 96 kHz) as 24-bit mono. Each clip's gain is capped at -1 dBFS.
+- **Key-up:** the tap also listens for key-up. Profiles have `down/` and `up/`. Real releases
+  are used when a recording has at least 6 clean ones (MX Clear, MX Red); otherwise a release
+  is derived from the press (first 70 ms, high-passed at 900 Hz, -13 dB).
+- **Spatial:** the key code is mapped straight to a left-right position (`KeyLayout`) and
+  dropped; each voice is panned by position × width (default 0.6).
+- **Latency:** the tap runs on its own user-interactive thread and calls the engine directly
+  (the engine guards its state with a lock); the output unit is asked for a 128-frame buffer.
+  The menu shows the measured output delay and points out Bluetooth when it is over 40 ms.

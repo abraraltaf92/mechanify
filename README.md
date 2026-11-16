@@ -3,12 +3,23 @@
 A small macOS menu-bar app that plays a keyboard click every time you press a key,
 in any app.
 
-- Sounds on/off toggle, volume slider, five switch profiles recorded from real keyboards
-  (Cherry MX Clear, Cherry MX Red, Gateron Black, Cherry MX Blue, Classic)
+- Five switch profiles recorded from real keyboards (Cherry MX Clear, Cherry MX Red,
+  Gateron Black, Cherry MX Blue, Classic)
+- **High-fidelity sound:** every clip is cut from the original recording at its native
+  sample rate (up to 96 kHz) and stored as 24-bit, with no resampling on load
+- **Spatial audio:** each click comes from where the key sits on the keyboard, left to
+  right, with an adjustable stereo width
+- **Instant feedback:** keys are handled on their own high-priority thread, sounds are
+  preloaded, and the output buffer is kept small. The menu shows the measured output
+  delay and warns when Bluetooth headphones are adding lag
+- **Key-down and key-up sounds:** separate press and release recordings (releases can be
+  turned off)
+- Sounds on/off, volume, launch at login
 - Launch at login
 - No Dock icon; lives in the menu bar
-- Private by design: listen-only event tap, never reads *which* key was pressed,
-  logs and stores nothing
+- Private by design: listen-only event tap; the key code is read only to look up the
+  key's left-right position and is then dropped. Characters are never requested, and
+  nothing is logged, stored or sent anywhere
 
 ## Install
 
@@ -71,16 +82,18 @@ Attach the `.dmg` to a GitHub release tagged `v<version>`.
 
 | Piece | File | Job |
 | --- | --- | --- |
-| `KeyListener` | `Sources/MechanifyCore/KeyListener.swift` | Listen-only `CGEventTap` for key-down; skips auto-repeat; re-enables itself if macOS disables the tap |
-| `SoundEngine` | `Sources/MechanifyCore/SoundEngine.swift` | `AVAudioEngine` with all samples preloaded and a pool of 12 player nodes used in rotation, so fast typing overlaps cleanly |
+| `KeyListener` | `Sources/MechanifyCore/KeyListener.swift` | Listen-only `CGEventTap` for key-down and key-up on its own thread; skips auto-repeat; re-enables itself if macOS disables the tap |
+| `SoundEngine` | `Sources/MechanifyCore/SoundEngine.swift` | `AVAudioEngine` with all samples preloaded, a pool of 16 panned player nodes used in rotation, and a small output buffer |
 | `RoundRobin`, `SamplePicker` | `Sources/MechanifyCore/Selection.swift` | Voice rotation and random sample choice (never the same sample twice in a row) |
-| `SoundProfile` | `Sources/MechanifyCore/SoundProfile.swift` | A profile is a folder of WAVs under `Resources/Profiles` |
+| `KeyLayout` | `Sources/MechanifyCore/KeyLayout.swift` | Key code → left-right stereo position on a Mac keyboard |
+| `SoundProfile` | `Sources/MechanifyCore/SoundProfile.swift` | A profile is a folder under `Resources/Profiles` with `down/` (presses) and `up/` (releases) |
 | `AppState`, menu | `Sources/Mechanify/` | Settings, permission flow, launch at login, SwiftUI `MenuBarExtra` |
 
 ### Adding a profile
 
-Drop a folder of mono WAV files (all the same sample rate) into `Resources/Profiles/<name>`
-and rebuild. Trim leading silence from each file, or the click will lag behind the key.
+Create `Resources/Profiles/<name>/down/` with mono WAV press recordings and, optionally,
+`up/` with release recordings (all files in a profile at the same sample rate), then
+rebuild. Trim leading silence from each file, or the click will lag behind the key.
 
 ## Sound credits
 
@@ -89,11 +102,11 @@ Every recording is released under [CC0](https://creativecommons.org/publicdomain
 
 | Profile | Source | What was done |
 | --- | --- | --- |
-| Cherry MX Clear | "Mechanical keyboard clicking. Different keys (4)" by **humi74**, [freesound.org/s/412926](https://freesound.org/s/412926/) | 18 single presses cut out |
-| Cherry MX Red | "Keyboard clicking typing Cherry Red Mechanical" by **handygaber**, [freesound.org/s/499773](https://freesound.org/s/499773/) | 32 presses cut from typing |
-| Gateron Black | "Gateron Black Switches Sound" by **el_boss**, [freesound.org/s/643559](https://freesound.org/s/643559/) | 3 clean presses, plus ±3% pitch variants |
-| Cherry MX Blue | "wKey", "qKey", "ctrlKey" by **UberBosser**, [freesound.org/s/421581](https://freesound.org/s/421581/), [/421583](https://freesound.org/s/421583/), [/421584](https://freesound.org/s/421584/) | 3 presses, plus ±3% pitch variants |
-| Classic | [Keyboard Soundpack #1](https://opengameart.org/node/122745) by **unicaegames** (Cherry KC 1000) | 32 single presses |
+| Cherry MX Clear | "Mechanical keyboard clicking. Different keys (4)" by **humi74**, [freesound.org/s/412926](https://freesound.org/s/412926/) | 17 presses and 14 real releases cut out |
+| Cherry MX Red | "Keyboard clicking typing Cherry Red Mechanical" by **handygaber**, [freesound.org/s/499773](https://freesound.org/s/499773/) | 32 presses and 16 real releases cut from typing, kept at 96 kHz |
+| Gateron Black | "Gateron Black Switches Sound" by **el_boss**, [freesound.org/s/643559](https://freesound.org/s/643559/) | 6 clean presses plus ±3% pitch variants; releases derived from the presses |
+| Cherry MX Blue | "wKey", "qKey", "ctrlKey" by **UberBosser**, [freesound.org/s/421581](https://freesound.org/s/421581/), [/421583](https://freesound.org/s/421583/), [/421584](https://freesound.org/s/421584/) | 3 presses plus ±3% pitch variants; releases derived from the presses |
+| Classic | [Keyboard Soundpack #1](https://opengameart.org/node/122745) by **unicaegames** (Cherry KC 1000) | 32 single presses; releases derived from the presses |
 
 To rebuild them, download the sources and run (needs `ffmpeg` and `python3`):
 

@@ -6,13 +6,17 @@ import SwiftUI
 /// Owns the listener and sound engine and keeps them in sync with the settings.
 @MainActor
 final class AppState: ObservableObject {
-    @AppStorage("enabled") var enabled = true { didSet { objectWillChange.send() } }
+    @AppStorage("enabled") var enabled = true { didSet { engine.isEnabled = enabled; objectWillChange.send() } }
     @AppStorage("volume") var volume = 0.6 { didSet { engine.volume = Float(volume) } }
     @AppStorage("profile") var profileID = "Cherry MX Clear" { didSet { loadProfile() } }
+    @AppStorage("releases") var releases = true { didSet { engine.playsReleases = releases } }
+    @AppStorage("spatial") var spatial = true { didSet { applySpatial() } }
+    @AppStorage("spatialWidth") var spatialWidth = 0.6 { didSet { applySpatial() } }
 
     @Published private(set) var hasPermission = KeyListener.hasPermission
     @Published private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     @Published private(set) var errorMessage: String?
+    @Published private(set) var latencyMs: Double?
 
     let profiles: [SoundProfile]
     private let engine = SoundEngine()
@@ -23,6 +27,9 @@ final class AppState: ObservableObject {
         let profilesDir = Bundle.main.resourceURL?.appendingPathComponent("Profiles")
         profiles = profilesDir.map { SoundProfile.discover(in: $0) } ?? []
         engine.volume = Float(volume)
+        engine.isEnabled = enabled
+        engine.playsReleases = releases
+        applySpatial()
         // A saved choice can name a profile that no longer ships (e.g. after an update).
         if let first = profiles.first, !profiles.contains(where: { $0.id == profileID }) {
             profileID = first.id  // didSet loads it
@@ -30,12 +37,9 @@ final class AppState: ObservableObject {
             loadProfile()
         }
 
-        listener.onKeyDown = { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, self.enabled else { return }
-                self.engine.playClick()
-            }
-        }
+        // Runs on the listener's own thread and goes straight to the engine,
+        // never through the main thread.
+        listener.onKey = { [engine] event in engine.handle(event) }
         startListening()
     }
 
@@ -76,12 +80,19 @@ final class AppState: ObservableObject {
         do {
             try engine.load(profile)
             errorMessage = nil
+            latencyMs = engine.outputLatencyMs
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    func preview() { engine.playClick() }
+    func preview() { engine.preview() }
+
+    func refreshLatency() { latencyMs = engine.outputLatencyMs }
+
+    private func applySpatial() {
+        engine.spatialWidth = spatial ? Float(spatialWidth) : 0
+    }
 
     // MARK: Launch at login
 

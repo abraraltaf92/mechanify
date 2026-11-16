@@ -40,19 +40,43 @@ struct SeededGenerator: RandomNumberGenerator {
     #expect(picker.pick(from: 1) == 0)
 }
 
-@Test func discoverFindsWavFoldersInPreferredOrder() throws {
+@Test func discoverFindsProfilesInPreferredOrder() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    for (folder, files) in [("Classic", ["b.wav", "a.wav"]), ("Cherry MX Red", ["x.wav"]), ("custom", ["k.WAV"]), ("empty", ["notes.txt"])] {
-        let dir = root.appendingPathComponent(folder)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        for f in files { FileManager.default.createFile(atPath: dir.appendingPathComponent(f).path, contents: Data()) }
+    let layout: [(String, [String])] = [
+        ("Classic", ["b.wav", "a.wav"]),                                    // flat folder: presses only
+        ("Cherry MX Red", ["down/p1.wav", "down/p2.wav", "up/r1.wav"]),     // down/ + up/
+        ("custom", ["down/k.WAV"]),
+        ("empty", ["notes.txt", "up/r.wav"]),                               // releases alone don't count
+    ]
+    for (folder, files) in layout {
+        for f in files {
+            let url = root.appendingPathComponent(folder).appendingPathComponent(f)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            FileManager.default.createFile(atPath: url.path, contents: Data())
+        }
     }
 
     let profiles = SoundProfile.discover(in: root)
     #expect(profiles.map(\.id) == ["Cherry MX Red", "Classic", "custom"])
-    #expect(profiles[1].samples.map(\.lastPathComponent) == ["a.wav", "b.wav"])
-    #expect(profiles[0].displayName == "Cherry MX Red")
+    #expect(profiles[0].presses.map(\.lastPathComponent) == ["p1.wav", "p2.wav"])
+    #expect(profiles[0].releases.map(\.lastPathComponent) == ["r1.wav"])
+    #expect(profiles[1].presses.map(\.lastPathComponent) == ["a.wav", "b.wav"])
+    #expect(profiles[1].releases.isEmpty)
+}
+
+@Test func keyPositionsSpreadLeftToRight() {
+    let a = KeyLayout.pan(forKeyCode: 0)      // A
+    let g = KeyLayout.pan(forKeyCode: 5)      // G
+    let l = KeyLayout.pan(forKeyCode: 37)     // L
+    let ret = KeyLayout.pan(forKeyCode: 36)   // Return
+    #expect(a < g && g < l && l < ret)
+    #expect(a < -0.5 && ret > 0.8)
+    #expect(abs(KeyLayout.pan(forKeyCode: 49)) < 0.01)    // Space sits in the middle
+    #expect(KeyLayout.pan(forKeyCode: 9999) == 0)         // unknown keys too
+    for code: Int64 in [53, 50, 51, 48, 57, 6, 124] {
+        #expect((-1...1).contains(KeyLayout.pan(forKeyCode: code)))
+    }
 }
 
 @Test func bundledProfilesDecodeAndPlay() throws {
@@ -65,8 +89,11 @@ struct SeededGenerator: RandomNumberGenerator {
     let engine = SoundEngine()
     engine.volume = 0
     for profile in profiles {
-        #expect(profile.samples.count >= 9)
+        #expect(profile.presses.count >= 9)
+        #expect(profile.releases.count >= 9)
         try engine.load(profile)
-        engine.playClick()
+        engine.handle(.down(pan: -0.8))
+        engine.handle(.up(pan: 0.8))
     }
+    #expect(engine.outputLatencyMs >= 0)
 }
