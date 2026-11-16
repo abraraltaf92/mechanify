@@ -65,10 +65,26 @@ public final class SoundEngine {
 
     public init(poolSize: Int = SoundEngine.defaultPoolSize) {
         rotation = RoundRobin(count: poolSize)
-        // An output device change (headphones in/out) stops the engine; bring it back.
+        // An output device change (AirPods connecting or disconnecting, headphones in or
+        // out) stops the engine and can leave the voices wired to the old device. Rebuild.
         configObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
-        ) { [weak self] _ in try? self?.start() }
+        ) { [weak self] _ in self?.rebuildForNewDevice() }
+    }
+
+    /// Re-wires every voice to the current output device and restarts at low latency.
+    public func rebuildForNewDevice() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let format else { return }
+        engine.stop()
+        for player in players {
+            player.stop()
+            engine.disconnectNodeOutput(player)
+            engine.connect(player, to: engine.mainMixerNode, format: format)
+        }
+        engine.connect(engine.mainMixerNode, to: engine.outputNode, format: nil)
+        try? start()
     }
 
     deinit {
@@ -139,6 +155,8 @@ public final class SoundEngine {
             requestSmallIOBuffer()
             engine.prepare()
             try engine.start()
+            // Some devices only accept the buffer size once the unit is running.
+            if currentIOBufferFrames() > Self.preferredIOBufferFrames { requestSmallIOBuffer() }
         }
         players.forEach { if !$0.isPlaying { $0.play() } }
     }
