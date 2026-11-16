@@ -300,6 +300,12 @@ final class AppState: ObservableObject {
         } catch {
             errorMessage = "Launch at login: \(error.localizedDescription)"
         }
+        // macOS can hold a new login item until the user approves it in System Settings.
+        // Say so and open that page, instead of leaving the switch silently off.
+        if on && SMAppService.mainApp.status == .requiresApproval {
+            errorMessage = "Approve Mechanify under General → Login Items in System Settings to finish turning this on."
+            SMAppService.openSystemSettingsLoginItems()
+        }
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 }
