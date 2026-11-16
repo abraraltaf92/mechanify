@@ -74,7 +74,7 @@ struct MenuContent: View {
                 }
                 .help("Switch recordings: CC0, from Freesound and OpenGameArt (credits in the README)")
                 Spacer()
-                Text("\(state.keysToday.formatted()) today")
+                Text("\(KeyStats.compact(state.keysToday)) today")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .help("Key presses today (\(state.keysTotal.formatted()) in total). Counts only.")

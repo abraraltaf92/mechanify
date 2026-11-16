@@ -198,3 +198,20 @@ private func renderTone(_ tone: Float) throws -> [Float] {
     engine.outputDeviceUID = nil
     #expect(engine.currentOutputName == AudioDevices.defaultOutput()?.name)
 }
+
+@Test func countsShortenWithUnits() {
+    let cases: [(Int, String)] = [
+        (0, "0"), (7, "7"), (999, "999"),
+        (1_000, "1K"), (1_234, "1.2K"), (1_999, "1.9K"), (12_345, "12.3K"), (99_999, "99.9K"),
+        (100_000, "100K"), (123_456, "123K"), (999_999, "999K"),
+        (1_000_000, "1M"), (1_250_000, "1.2M"), (45_600_000, "45.6M"), (999_999_999, "999M"),
+        (1_000_000_000, "1B"), (2_500_000_000_000, "2.5T"), (-5, "0"),
+    ]
+    for (n, expected) in cases {
+        #expect(KeyStats.compact(n) == expected, "\(n)")
+    }
+    // Never longer than 5 characters, so it can't crowd the menu.
+    for n in [9_999, 99_999, 999_999, 9_999_999, 99_999_999, 999_999_999, Int.max] {
+        #expect(KeyStats.compact(n).count <= 5, "\(n) → \(KeyStats.compact(n))")
+    }
+}
