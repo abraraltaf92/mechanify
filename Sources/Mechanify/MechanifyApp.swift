@@ -9,7 +9,7 @@ struct MechanifyApp: App {
         MenuBarExtra {
             MenuContent(state: state)
         } label: {
-            Image(systemName: state.enabled && state.hasPermission ? "keyboard.fill" : "keyboard")
+            Image(nsImage: state.enabled && state.hasPermission ? MenuBarIcon.on : MenuBarIcon.off)
         }
         .menuBarExtraStyle(.window)
     }
@@ -71,7 +71,11 @@ struct MenuContent: View {
 
             Divider()
             HStack {
-                Text("Sounds: CC0 (Freesound, OpenGameArt)").font(.caption2).foregroundStyle(.tertiary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Mechanify™").font(.caption.weight(.semibold))
+                    Text("Made with ♥ by Abrar in NYC").font(.caption2).foregroundStyle(.secondary)
+                }
+                .help("Switch recordings: CC0, from Freesound and OpenGameArt (credits in the README)")
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")
