@@ -28,7 +28,7 @@ struct MenuContent: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Input Monitoring permission needed", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                    Text("Turn on Keyboard Sounds under Privacy & Security → Input Monitoring. Sounds start automatically once it's on.")
+                    Text("Turn on Keyboard Sounds under Privacy & Security → Input Monitoring. Sounds start automatically once it's on.\n\nAlready on? It belongs to an older build. Select it, remove it with −, then add this app again (or turn it on when it reappears).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
