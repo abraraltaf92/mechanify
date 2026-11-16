@@ -41,6 +41,10 @@ struct MenuContent: View {
                     .foregroundStyle(.orange)
             }
 
+            if let keyboard = state.newKeyboard {
+                NewKeyboardBanner(state: state, keyboard: keyboard)
+            }
+
             LabeledSlider(title: "Volume", value: $state.volume, range: 0...1,
                           low: "speaker.fill", high: "speaker.wave.3.fill") { state.preview() }
 
@@ -90,6 +94,30 @@ struct MenuContent: View {
         .padding(14)
         .frame(width: 290)
         .onAppear { state.refreshLatency() }
+    }
+}
+
+/// Asks once about a keyboard that just typed for the first time.
+struct NewKeyboardBanner: View {
+    @ObservedObject var state: AppState
+    let keyboard: KeyboardInfo
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("New keyboard: \(keyboard.name)", systemImage: "keyboard.badge.ellipsis")
+                .font(.callout.weight(.semibold))
+            Text("Play sounds when you type on it? Turn this off for a mechanical keyboard that already clicks.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Play Sounds") { state.setSounds(true, for: keyboard.id) }
+                    .keyboardShortcut(.defaultAction)
+                Button("Keep It Quiet") { state.setSounds(false, for: keyboard.id) }
+            }
+            .controlSize(.small)
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

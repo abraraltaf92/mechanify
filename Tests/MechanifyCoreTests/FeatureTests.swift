@@ -14,40 +14,34 @@ private let clear = SoundProfile.discover(in: profilesRoot).first { $0.id == "Ch
 
 // MARK: Modifier keys
 
-@Test func modifierEdgesComeFromTheirOwnFlagBit() {
-    // Left shift goes down, then up.
-    #expect(KeyLayout.modifierIsDown(keyCode: 56, flags: 0x20102) == true)
-    #expect(KeyLayout.modifierIsDown(keyCode: 56, flags: 0x100) == false)
-    // Both shifts held, left released: only the right-shift bit remains, so left is up.
-    #expect(KeyLayout.modifierIsDown(keyCode: 56, flags: 0x20104) == false)
-    #expect(KeyLayout.modifierIsDown(keyCode: 60, flags: 0x20104) == true)
-    // Each modifier uses its own bit.
-    for (code, bit) in KeyLayout.modifierFlag {
-        #expect(KeyLayout.modifierIsDown(keyCode: code, flags: bit) == true, "key \(code) down")
-        #expect(KeyLayout.modifierIsDown(keyCode: code, flags: 0) == false, "key \(code) up")
-    }
-    #expect(KeyLayout.modifierIsDown(keyCode: 57, flags: 0) == true, "caps lock: one press event, both ways")
-    #expect(KeyLayout.modifierIsDown(keyCode: 0, flags: 0x02) == nil, "A is not a modifier")
-}
+private let laptop = KeyboardInfo(id: KeyboardInfo.builtInID, name: "Built-in keyboard", isBuiltIn: true)
 
-private func flagsEvent(_ code: CGKeyCode, flags: UInt64) -> CGEvent {
-    let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true)!
-    event.flags = CGEventFlags(rawValue: flags)
-    return event
-}
-
-@Test func listenerTurnsModifierChangesIntoDownAndUp() {
+@Test func modifierKeysClickFromTheirOwnSide() {
     let listener = KeyListener()
     var seen: [KeyEvent] = []
     listener.onKey = { seen.append($0) }
-    listener.handle(.flagsChanged, flagsEvent(55, flags: 0x100108))  // left command down
-    listener.handle(.flagsChanged, flagsEvent(55, flags: 0x100))     // left command up
-    listener.handle(.flagsChanged, flagsEvent(54, flags: 0x100110))  // right command down
+    listener.process(page: 0x07, usage: 0xE3, pressed: true, keyboard: laptop)   // left command
+    listener.process(page: 0x07, usage: 0xE3, pressed: false, keyboard: laptop)
+    listener.process(page: 0x07, usage: 0xE7, pressed: true, keyboard: laptop)   // right command
     #expect(seen.count == 3)
     if case .down(let left) = seen[0], case .up = seen[1], case .down(let right) = seen[2] {
-        #expect(left < 0 && right > 0, "left command sounds left, right command sounds right")
+        #expect(left < 0 && right > 0)
     } else {
         Issue.record("unexpected events \(seen)")
+    }
+}
+
+@Test func bothShiftsAreTrackedSeparately() {
+    let listener = KeyListener()
+    var seen: [KeyEvent] = []
+    listener.onKey = { seen.append($0) }
+    listener.process(page: 0x07, usage: 0xE1, pressed: true, keyboard: laptop)   // left shift down
+    listener.process(page: 0x07, usage: 0xE5, pressed: true, keyboard: laptop)   // right shift down
+    listener.process(page: 0x07, usage: 0xE1, pressed: false, keyboard: laptop)  // left shift up
+    listener.process(page: 0x07, usage: 0xE5, pressed: false, keyboard: laptop)  // right shift up
+    #expect(seen.count == 4)
+    if case .up(let leftUp) = seen[2], case .up(let rightUp) = seen[3] {
+        #expect(leftUp < 0 && rightUp > 0, "each release comes from the key that was let go")
     }
 }
 
@@ -56,17 +50,21 @@ private func flagsEvent(_ code: CGKeyCode, flags: UInt64) -> CGEvent {
     listener.includesModifiers = false
     var seen: [KeyEvent] = []
     listener.onKey = { seen.append($0) }
-    listener.handle(.flagsChanged, flagsEvent(56, flags: 0x20102))
-    listener.handle(.keyDown, CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)!)
-    #expect(seen.count == 1, "ordinary keys still click")
+    for usage: UInt32 in 0xE0...0xE7 { listener.process(page: 0x07, usage: usage, pressed: true, keyboard: laptop) }
+    listener.process(page: 0x07, usage: 0x39, pressed: true, keyboard: laptop)   // caps lock
+    listener.process(page: 0xFF, usage: 0x03, pressed: true, keyboard: laptop)   // fn
+    listener.process(page: 0x07, usage: 0x04, pressed: true, keyboard: laptop)   // A
+    #expect(seen.count == 1, "only the letter clicks")
 }
 
-@Test func unknownFlagChangesAreIgnored() {
+@Test func capsLockAndFnClickWhenModifiersAreOn() {
     let listener = KeyListener()
     var seen: [KeyEvent] = []
     listener.onKey = { seen.append($0) }
-    listener.handle(.flagsChanged, flagsEvent(0, flags: 0x20000))
-    #expect(seen.isEmpty)
+    listener.process(page: 0x07, usage: 0x39, pressed: true, keyboard: laptop)
+    listener.process(page: 0x07, usage: 0x39, pressed: false, keyboard: laptop)
+    listener.process(page: 0xFF, usage: 0x03, pressed: true, keyboard: laptop)
+    #expect(seen.count == 3, "caps lock press and release, and fn")
 }
 
 // MARK: Key positions

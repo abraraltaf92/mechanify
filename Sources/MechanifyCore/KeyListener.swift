@@ -1,5 +1,5 @@
-import CoreGraphics
 import Foundation
+import IOKit.hid
 
 /// A key press or release, reduced to what the sound needs: which edge, and where on
 /// the keyboard (as a stereo position). The key itself is not passed on.
@@ -8,116 +8,180 @@ public enum KeyEvent: Equatable {
     case up(pan: Float)
 }
 
-/// Global key listener built on a listen-only CGEventTap.
+/// Global key listener built on IOKit's HID manager, so every press is known together
+/// with the physical keyboard it came from. That lets you silence a keyboard that already
+/// makes its own sound (a real mechanical one) while others keep clicking.
 ///
-/// Privacy: the tap is listen-only (it cannot change or block input). The callback reads
-/// the key code only to look up the key's left-right position (and, for modifier keys,
-/// whether it went down or up), then drops it; characters are never requested. Nothing
-/// is logged or stored.
+/// Privacy: keyboards are opened without seizing them, so typing reaches your apps
+/// exactly as before. Each report is reduced at once to "down or up" plus the key's
+/// left-right position; the key itself is dropped and characters are never produced.
+/// Nothing is logged or stored. Keyboard identities (name, vendor, product) are kept only
+/// so your per-keyboard choice can be remembered.
 ///
-/// The tap runs on its own high-priority thread, so a busy main thread (menus, SwiftUI)
-/// can never delay a click. `onKey` is called on that thread.
+/// Physical presses only: keys typed by software (automation, remapping tools that post
+/// their own events) don't click, and holding a key plays once (HID has no auto-repeat).
+///
+/// Runs on its own high-priority thread, so a busy main thread can never delay a click.
+/// `onKey` is called on that thread; `onNewKeyboard` on the main thread.
 ///
 /// Needs the Input Monitoring permission (System Settings → Privacy & Security).
 public final class KeyListener {
     public var onKey: ((KeyEvent) -> Void)?
+    /// Called once per run for each keyboard the first time it types.
+    public var onKeyboardTyped: ((KeyboardInfo) -> Void)?
 
-    /// Also click for Shift, Control, Option, Command, Fn and Caps Lock. Safe to change
-    /// from any thread while listening.
+    /// Also click for Shift, Control, Option, Command, fn and Caps Lock.
     public var includesModifiers: Bool {
         get { settingsLock.withLock { _includesModifiers } }
         set { settingsLock.withLock { _includesModifiers = newValue } }
     }
+
+    /// Keyboard IDs that make no sound.
+    public var silencedKeyboards: Set<String> {
+        get { settingsLock.withLock { _silenced } }
+        set { settingsLock.withLock { _silenced = newValue } }
+    }
+
     private var _includesModifiers = true
+    private var _silenced: Set<String> = []
     private let settingsLock = NSLock()
 
-    private var tap: CFMachPort?
+    // Listener-thread state.
+    private var manager: IOHIDManager?
     private var runLoop: CFRunLoop?
+    private var identities: [UnsafeMutableRawPointer: KeyboardInfo] = [:]
+    private var held: [String: Set<UInt32>] = [:]
+    private var announced: Set<String> = []
 
     public init() {}
 
     deinit { stop() }
 
-    public static var hasPermission: Bool { CGPreflightListenEventAccess() }
+    /// Keyboards open right now (for diagnostics). Read from the listener thread's state,
+    /// so treat it as approximate.
+    public var connectedKeyboards: [KeyboardInfo] {
+        Array(Set(identities.values)).sorted { $0.name < $1.name }
+    }
+
+    public static var hasPermission: Bool {
+        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+    }
 
     /// Shows the system prompt the first time; afterwards macOS only lists the app
     /// in System Settings, so the menu also offers a direct link there.
     @discardableResult
-    public static func requestPermission() -> Bool { CGRequestListenEventAccess() }
+    public static func requestPermission() -> Bool { IOHIDRequestAccess(kIOHIDRequestTypeListenEvent) }
 
-    /// Installs the tap on a dedicated thread. Returns false without permission.
+    /// Opens every keyboard (now and as they connect) on a dedicated thread.
+    /// Returns false without permission.
     @discardableResult
     public func start() -> Bool {
-        if tap != nil { return true }
-        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
-            | CGEventMask(1 << CGEventType.keyUp.rawValue)
-            | CGEventMask(1 << CGEventType.flagsChanged.rawValue)
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: mask,
-            callback: keyListenerCallback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
-        ) else { return false }
-        self.tap = tap
+        if manager != nil { return true }
+        guard Self.hasPermission else { return false }
 
-        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        IOHIDManagerSetDeviceMatching(manager, [
+            kIOHIDDeviceUsagePageKey: kHIDPage_GenericDesktop,
+            kIOHIDDeviceUsageKey: kHIDUsage_GD_Keyboard,
+        ] as CFDictionary)
+        IOHIDManagerSetInputValueMatchingMultiple(manager, [
+            [kIOHIDElementUsagePageKey: HIDKeys.keyboardPage],
+            [kIOHIDElementUsagePageKey: HIDKeys.appleTopCasePage],
+        ] as CFArray)
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        IOHIDManagerRegisterDeviceMatchingCallback(manager, { context, _, _, device in
+            guard let context else { return }
+            Unmanaged<KeyListener>.fromOpaque(context).takeUnretainedValue().deviceConnected(device)
+        }, context)
+        IOHIDManagerRegisterDeviceRemovalCallback(manager, { context, _, _, device in
+            guard let context else { return }
+            Unmanaged<KeyListener>.fromOpaque(context).takeUnretainedValue().deviceRemoved(device)
+        }, context)
+        IOHIDManagerRegisterInputValueCallback(manager, { context, _, _, value in
+            guard let context else { return }
+            Unmanaged<KeyListener>.fromOpaque(context).takeUnretainedValue().received(value)
+        }, context)
+
         let ready = DispatchSemaphore(value: 0)
         var loop: CFRunLoop?
+        var opened = false
         let thread = Thread {
             loop = CFRunLoopGetCurrent()
-            CFRunLoopAddSource(loop, source, .commonModes)
+            IOHIDManagerScheduleWithRunLoop(manager, loop!, CFRunLoopMode.defaultMode.rawValue)
+            opened = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess
             ready.signal()
-            CFRunLoopRun()
+            if opened { CFRunLoopRun() }
         }
         thread.name = "Mechanify key listener"
         thread.qualityOfService = .userInteractive
         thread.start()
         ready.wait()
+        guard opened else { return false }
+        self.manager = manager
         runLoop = loop
-        CGEvent.tapEnable(tap: tap, enable: true)
         return true
     }
 
     public func stop() {
-        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
-        if let runLoop { CFRunLoopStop(runLoop) }
-        tap = nil
-        runLoop = nil
-    }
-
-    /// Turns one tapped event into a `KeyEvent` (internal so tests can feed it events).
-    func handle(_ type: CGEventType, _ event: CGEvent) {
-        switch type {
-        case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            // macOS disables taps whose callback stalls; switch it straight back on.
-            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
-        case .keyDown:
-            // Holding a key fires repeats; one click per physical press sounds right.
-            guard event.getIntegerValueField(.keyboardEventAutorepeat) == 0 else { return }
-            onKey?(.down(pan: KeyLayout.pan(forKeyCode: event.getIntegerValueField(.keyboardEventKeycode))))
-        case .keyUp:
-            onKey?(.up(pan: KeyLayout.pan(forKeyCode: event.getIntegerValueField(.keyboardEventKeycode))))
-        case .flagsChanged:
-            // Modifier keys don't send key-down/up; macOS reports a change of the
-            // modifier flags instead. Work out which edge it was from the key's own bit.
-            guard includesModifiers else { return }
-            let code = event.getIntegerValueField(.keyboardEventKeycode)
-            guard let isDown = KeyLayout.modifierIsDown(keyCode: code, flags: event.flags.rawValue) else { return }
-            let pan = KeyLayout.pan(forKeyCode: code)
-            onKey?(isDown ? .down(pan: pan) : .up(pan: pan))
-        default:
-            break
+        guard let manager, let runLoop else { return }
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) {
+            IOHIDManagerUnscheduleFromRunLoop(manager, runLoop, CFRunLoopMode.defaultMode.rawValue)
+            IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+            CFRunLoopStop(runLoop)
         }
+        CFRunLoopWakeUp(runLoop)
+        self.manager = nil
+        self.runLoop = nil
     }
-}
 
-private func keyListenerCallback(
-    proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, userInfo: UnsafeMutableRawPointer?
-) -> Unmanaged<CGEvent>? {
-    if let userInfo {
-        Unmanaged<KeyListener>.fromOpaque(userInfo).takeUnretainedValue().handle(type, event)
+    // MARK: Devices
+
+    private func deviceConnected(_ device: IOHIDDevice) {
+        func prop<T>(_ key: String) -> T? { IOHIDDeviceGetProperty(device, key as CFString) as? T }
+        identities[Unmanaged.passUnretained(device).toOpaque()] = KeyboardInfo.identify(
+            product: prop(kIOHIDProductKey),
+            vendorID: prop(kIOHIDVendorIDKey) ?? 0,
+            productID: prop(kIOHIDProductIDKey) ?? 0,
+            serial: prop(kIOHIDSerialNumberKey),
+            builtIn: prop(kIOHIDBuiltInKey) ?? false
+        )
     }
-    return Unmanaged.passUnretained(event)
+
+    private func deviceRemoved(_ device: IOHIDDevice) {
+        let key = Unmanaged.passUnretained(device).toOpaque()
+        if let id = identities.removeValue(forKey: key)?.id { held[id] = nil }
+    }
+
+    // MARK: Key reports
+
+    private func received(_ value: IOHIDValue) {
+        let element = IOHIDValueGetElement(value)
+        let device = IOHIDElementGetDevice(element)
+        guard let keyboard = identities[Unmanaged.passUnretained(device).toOpaque()] else { return }
+        process(page: IOHIDElementGetUsagePage(element), usage: IOHIDElementGetUsage(element),
+                pressed: IOHIDValueGetIntegerValue(value) != 0, keyboard: keyboard)
+    }
+
+    /// Turns one key report into a `KeyEvent` (internal so tests can feed it reports).
+    func process(page: UInt32, usage: UInt32, pressed: Bool, keyboard: KeyboardInfo) {
+        guard let code = HIDKeys.keyCode(page: page, usage: usage) else { return }
+
+        // Some keyboards send the same state twice; only real edges count.
+        let key = (page << 16) | usage
+        var keys = held[keyboard.id, default: []]
+        guard pressed ? keys.insert(key).inserted : keys.remove(key) != nil else { return }
+        held[keyboard.id] = keys
+
+        if pressed, !announced.contains(keyboard.id) {
+            announced.insert(keyboard.id)
+            let callback = onKeyboardTyped
+            DispatchQueue.main.async { callback?(keyboard) }
+        }
+
+        let (modifiers, silenced) = settingsLock.withLock { (_includesModifiers, _silenced) }
+        guard !silenced.contains(keyboard.id) else { return }
+        guard modifiers || !HIDKeys.modifierKeyCodes.contains(code) else { return }
+        let pan = KeyLayout.pan(forKeyCode: code)
+        onKey?(pressed ? .down(pan: pan) : .up(pan: pan))
+    }
 }

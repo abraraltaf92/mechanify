@@ -19,8 +19,8 @@ public enum KeyLayout {
         // Home row
         57: 0.9, 0: 2.25, 1: 3.25, 2: 4.25, 3: 5.25, 5: 6.25, 4: 7.25,
         38: 8.25, 40: 9.25, 37: 10.25, 41: 11.25, 39: 12.25, 36: 14.0,
-        // Bottom letter row
-        6: 2.75, 7: 3.75, 8: 4.75, 9: 5.75, 11: 6.75, 45: 7.75, 46: 8.75,
+        // Bottom letter row (10 is the extra key left of Z on ISO keyboards)
+        10: 1.75, 6: 2.75, 7: 3.75, 8: 4.75, 9: 5.75, 11: 6.75, 45: 7.75, 46: 8.75,
         43: 9.75, 47: 10.75, 44: 11.75,
         // Space and arrows
         49: 7.5, 123: 13.0, 125: 13.75, 126: 13.75, 124: 14.5,
@@ -29,6 +29,7 @@ public enum KeyLayout {
         63: 0.5, 59: 1.5, 58: 2.5, 55: 3.75, 54: 11.25, 61: 12.4, 62: 13.0,
         // Extended keyboards: navigation block and numeric keypad sit right of the main
         // keys, so they play at the far right.
+        105: 15.6, 107: 16.0, 113: 16.4,  // F13–F15 / Print Screen, Scroll Lock, Pause
         114: 15.6, 115: 16.0, 116: 16.4, 117: 15.6, 119: 16.0, 121: 16.4,
         71: 17.0, 81: 17.5, 75: 18.0, 67: 18.5,
         89: 17.0, 91: 17.5, 92: 18.0, 78: 18.5,
@@ -36,31 +37,6 @@ public enum KeyLayout {
         83: 17.0, 84: 17.5, 85: 18.0, 76: 18.5,
         82: 17.25, 65: 18.0,
     ]
-
-    /// Modifier key codes and the device-specific flag bit that is set while each is held.
-    /// Left and right versions have their own bits, so releasing one Shift while the other
-    /// is still held is told apart correctly. Caps Lock has no "held" state: macOS reports
-    /// one event per press, so it is treated as a press only.
-    static let modifierFlag: [Int64: UInt64] = [
-        56: 0x02,      // left shift
-        60: 0x04,      // right shift
-        59: 0x01,      // left control
-        62: 0x2000,    // right control
-        58: 0x20,      // left option
-        61: 0x40,      // right option
-        55: 0x08,      // left command
-        54: 0x10,      // right command
-        63: 0x800000,  // fn
-    ]
-    static let capsLock: Int64 = 57
-
-    /// For a modifier key event: true if the key went down, false if it came up, nil if
-    /// the key code isn't a modifier.
-    public static func modifierIsDown(keyCode: Int64, flags: UInt64) -> Bool? {
-        if keyCode == capsLock { return true }
-        guard let bit = modifierFlag[keyCode] else { return nil }
-        return flags & bit != 0
-    }
 
     /// Stereo position from -1 (far left) to 1 (far right).
     public static func pan(forKeyCode code: Int64) -> Float {

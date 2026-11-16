@@ -19,15 +19,19 @@ in any app.
   stays on Bluetooth headphones, so clicks stay instant
 - **Auto-mute:** pauses while the microphone is in use (calls, meetings, dictation) and in
   apps you choose. It only checks whether the microphone is busy; it never listens
+- **Per-keyboard sounds:** turn clicks off for a keyboard that already makes its own sound
+  (a real mechanical one) and keep them on for the MacBook's built-in keyboard, even with
+  both connected. Each keyboard is remembered; a new one is asked about the first time it types
 - **⌃⌥⌘K** turns sounds on or off from any app
 - **Typing stats:** key presses today and all time (counts only)
 - A welcome window that walks you through the one-time permission
 - Sounds on/off, volume, launch at login; everyday controls in the menu, the rest in Settings
 - Launch at login
 - No Dock icon; lives in the menu bar
-- Private by design: listen-only event tap; the key code is read only to look up the
-  key's left-right position and is then dropped. Characters are never requested, and
-  nothing is logged, stored or sent anywhere
+- Private by design: keyboards are read without seizing them; each key report is reduced at
+  once to "down or up" plus the key's left-right position, and the key is dropped.
+  Characters are never produced, and nothing is logged, stored or sent anywhere. Only
+  physical key presses click; keys typed by software don't
 
 ## Install
 
@@ -105,7 +109,8 @@ Attach the `.dmg` to a GitHub release tagged `v<version>`.
 
 | Piece | File | Job |
 | --- | --- | --- |
-| `KeyListener` | `Sources/MechanifyCore/KeyListener.swift` | Listen-only `CGEventTap` for key-down and key-up on its own thread; skips auto-repeat; re-enables itself if macOS disables the tap |
+| `HIDKeys`, `Keyboards` | `Sources/MechanifyCore/` | HID key usages → Mac key positions; keyboard identity (built-in, or vendor:product:serial) and per-keyboard choices |
+| `KeyListener` | `Sources/MechanifyCore/KeyListener.swift` | IOKit HID manager on its own thread: every key press and release, tagged with the keyboard it came from; drops repeated reports and silenced keyboards |
 | `SoundEngine` | `Sources/MechanifyCore/SoundEngine.swift` | Loads profiles (converted once to 48 kHz with the highest-quality converter and cached), places each click by key position, keeps the output buffer small, recovers from output-device changes |
 | `AudioDevices` | `Sources/MechanifyCore/AudioDevices.swift` | Lists outputs, reads whether a microphone is busy (a status flag; audio is never opened), watches for devices coming and going |
 | `AutoMute`, `KeyStats` | `Sources/MechanifyCore/` | When to pause on its own; daily and all-time press counts with midnight roll-over |

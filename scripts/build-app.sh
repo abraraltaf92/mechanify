@@ -8,7 +8,7 @@ name="Mechanify"
 # Kept from the app's first name on purpose: macOS keys the Input Monitoring grant and
 # saved settings to this ID (and the signing certificate), so changing it resets both.
 bundle_id="local.keyboardsounds"
-version="1.2.0"
+version="1.3.0"
 app="build/$name.app"
 
 swift build -c release

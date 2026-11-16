@@ -68,3 +68,18 @@ and playing every bundled profile. A manual check that typing in other apps clic
   3 kHz (+6 dB × tone).
 - **Stats:** counts of presses only, saved every 30 s and on quit.
 - **Welcome / Settings windows:** plain `NSWindow`s hosting SwiftUI, opened from the menu-bar app.
+
+## v1.3
+
+- **Per-keyboard sounds:** key input moved from a `CGEventTap` to an `IOHIDManager` matching
+  Generic Desktop / Keyboard devices, opened without seizing (same Input Monitoring
+  permission). Each value callback carries its device, so presses are tagged with a keyboard
+  identity: `built-in` for anything reporting Built-In (the Mac's keyboard shows up as several
+  HID devices), otherwise `vendor:product:serial`.
+- HID reports physical key edges directly: no auto-repeat to filter, modifiers and Caps Lock
+  report both edges, fn/Globe arrives on Apple's vendor page (0xFF, usage 3). Repeated reports
+  are de-duplicated per keyboard.
+- A keyboard is announced the first time it types (not when it connects), so mice that expose
+  a keyboard interface for extra buttons never trigger a question. Unknown keyboards click
+  until the user chooses; choices persist as JSON in user defaults.
+- Trade-off: keys posted by software (automation, some remapping tools) no longer click.

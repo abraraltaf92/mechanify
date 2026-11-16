@@ -24,6 +24,29 @@ struct SettingsView: View {
                               lowText: "Deeper", highText: "Brighter") { state.preview() }
             }
 
+            Section("Keyboards") {
+                ForEach(keyboardRows, id: \.id) { keyboard in
+                    HStack {
+                        Image(systemName: keyboard.isBuiltIn ? "laptopcomputer" : "keyboard")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 20)
+                        Toggle(keyboard.name, isOn: Binding(
+                            get: { !state.keyboards.isSilenced(keyboard.id) },
+                            set: { state.setSounds($0, for: keyboard.id) }
+                        ))
+                        if !keyboard.isBuiltIn {
+                            Button {
+                                state.forgetKeyboard(keyboard.id)
+                            } label: { Image(systemName: "minus.circle.fill") }
+                                .buttonStyle(.borderless)
+                                .help("Forget this keyboard (it will be asked about again next time it types)")
+                        }
+                    }
+                }
+                Text("Turn a keyboard off if it already makes its own sound, like a mechanical one. New keyboards are added the first time you type on them, and each choice is remembered.")
+                    .settingsNote()
+            }
+
             Section("Output") {
                 OutputPicker(state: state)
             }
@@ -78,6 +101,14 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(minWidth: 460, minHeight: 560)
+    }
+}
+
+private extension SettingsView {
+    /// The built-in keyboard first, then every keyboard that has typed so far.
+    var keyboardRows: [KeyboardInfo] {
+        let builtIn = KeyboardInfo(id: KeyboardInfo.builtInID, name: "Built-in keyboard", isBuiltIn: true)
+        return [builtIn] + state.keyboards.known.filter { !$0.isBuiltIn }
     }
 }
 

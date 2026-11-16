@@ -22,6 +22,12 @@ final class AppState: ObservableObject {
     @AppStorage("muteDuringCalls") var muteDuringCalls = true { didSet { refreshAutoMute() } }
     @AppStorage("mutedApps") private var mutedAppsStorage = ""
 
+    // Keyboards
+    @AppStorage("keyboards") private var keyboardsStorage = Data()
+    @Published private(set) var keyboards = KeyboardPreferences()
+    /// A keyboard that just typed for the first time; the menu asks whether it should click.
+    @Published private(set) var newKeyboard: KeyboardInfo?
+
     // General
     @AppStorage("shortcutEnabled") var shortcutEnabled = true { didSet { applyShortcut() } }
     @AppStorage("welcomed") private var welcomed = false
@@ -61,6 +67,8 @@ final class AppState: ObservableObject {
         engine.playsReleases = releases
         engine.outputDeviceUID = outputDeviceUID.isEmpty ? nil : outputDeviceUID
         listener.includesModifiers = modifiers
+        keyboards = (try? JSONDecoder().decode(KeyboardPreferences.self, from: keyboardsStorage)) ?? KeyboardPreferences()
+        listener.silencedKeyboards = keyboards.silenced
         applySpatial()
         applyEnabled()
         // A saved choice can name a profile that no longer ships (e.g. after an update).
@@ -76,6 +84,9 @@ final class AppState: ObservableObject {
             counter.count(event)
             if case .down = event { stats.recordPress() }
             engine.handle(event)
+        }
+        listener.onKeyboardTyped = { [weak self] keyboard in
+            MainActor.assumeIsolated { self?.keyboardTyped(keyboard) }
         }
         startListening()
 
@@ -175,6 +186,33 @@ final class AppState: ObservableObject {
         tick()
     }
 
+    // MARK: Keyboards
+
+    private func keyboardTyped(_ keyboard: KeyboardInfo) {
+        if keyboards.remember(keyboard) {
+            newKeyboard = keyboard   // first time ever: ask in the menu
+        }
+        saveKeyboards()
+    }
+
+    func setSounds(_ on: Bool, for id: String) {
+        keyboards.setSounds(on, for: id)
+        if newKeyboard?.id == id { newKeyboard = nil }
+        saveKeyboards()
+    }
+
+    func forgetKeyboard(_ id: String) {
+        keyboards.forget(id)
+        saveKeyboards()
+    }
+
+    func dismissNewKeyboard() { newKeyboard = nil }
+
+    private func saveKeyboards() {
+        listener.silencedKeyboards = keyboards.silenced
+        keyboardsStorage = (try? JSONEncoder().encode(keyboards)) ?? Data()
+    }
+
     // MARK: Output device
 
     private func applyOutput() {
@@ -231,6 +269,9 @@ final class AppState: ObservableObject {
         guard let i = args.firstIndex(of: "--diagnose") else { return }
         let seconds = args.indices.contains(i + 1) ? Double(args[i + 1]) ?? 15 : 15
         print("diagnose: listening for \(Int(seconds)) s, permission \(hasPermission), profile \(profileID), output \(currentOutputName ?? "?"), muted \(muteDescription ?? "no")")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+            print("diagnose: keyboards open: " + listener.connectedKeyboards.map { "\($0.name)\($0.isBuiltIn ? " (built-in)" : "")" }.joined(separator: ", "))
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [self] in
             let c = counter.snapshot()
             print(String(format: "diagnose: key downs %d, key ups %d, clicks played %d, peak output %.3f, latency %.1f ms",
