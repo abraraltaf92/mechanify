@@ -15,6 +15,7 @@ same shape, much quieter (the key springing back up). Clips that catch an overla
 keystroke are cut short or skipped.
 
 usage: slice-hits.py ANALYSIS.wav [--presses 24] [--releases 16] [--max-ms 160]
+       slice-hits.py --onset RAW_S16LE_48K   (prints the click start in seconds)
 """
 import argparse
 import array
@@ -43,6 +44,19 @@ def read_mono16(path):
     if sys.byteorder == "big":
         data.byteswap()
     return rate, data
+
+
+def click_start(samples, rate):
+    """Index where the click begins: find where the sound first passes 30% of its peak,
+    then step back (1 ms at a time) to where that rise started (10% of peak). A stray
+    tick or noise before the click doesn't count, because it never reaches 30%."""
+    peak = max(map(abs, samples)) or 1
+    frame = max(1, rate // 1000)
+    env = [max(map(abs, samples[i:i + frame])) for i in range(0, len(samples), frame)]
+    k = next(i for i, e in enumerate(env) if e >= peak * 0.3)
+    while k > 0 and env[k - 1] >= peak * 0.1:
+        k -= 1
+    return k * frame
 
 
 def percentile(values, q):
@@ -77,6 +91,12 @@ def find_hits(rate, data, max_ms):
         if peak_at * 1000 // rate > MAX_PEAK_MS:
             continue  # caught an overlapping keystroke
         peak = abs(seg[peak_at])
+        # Start 2 ms before the click itself (see click_start), not where the
+        # sound first rises out of the room noise, so every clip lands with the key.
+        click = click_start(seg, rate)
+        shift = max(0, click - rate * PRE_ROLL_MS // 1000)
+        start += shift
+        seg = seg[shift:]
         length = len(seg)
         for j in range(rate * SECOND_HIT_AFTER_MS // 1000, len(seg), frame):
             if max(map(abs, seg[j:j + frame])) > peak * SECOND_HIT_RATIO:
@@ -87,6 +107,11 @@ def find_hits(rate, data, max_ms):
 
 
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--onset":
+        a = array.array("h")
+        a.frombytes(open(sys.argv[2], "rb").read())
+        print(click_start(a, 48000) / 48000)
+        return
     ap = argparse.ArgumentParser()
     ap.add_argument("input")
     ap.add_argument("--presses", type=int, default=24)

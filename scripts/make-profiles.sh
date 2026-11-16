@@ -86,9 +86,19 @@ pitch_variants() {
   done
 }
 
-# Single-press files: trim to the click, peak at -4 dBFS like the sliced profiles.
+# Seconds until the click itself starts (see click_start in slice-hits.py).
+click_onset() {
+  ffmpeg -hide_banner -loglevel error -y -i "$1" -ac 1 -ar 48000 -f s16le "$work/onset.raw"
+  python3 -I "$root/scripts/slice-hits.py" --onset "$work/onset.raw"
+}
+
+# Single-press files: start 2 ms before the click itself (some recordings have a soft
+# lead-in, such as a finger brushing the keycap, that would make the click feel late),
+# then peak at -4 dBFS like the sliced profiles.
 single() {  # single <file> <output> <normalise yes|no>
-  ffmpeg -hide_banner -loglevel error -y -i "$1" -af "$trim,$tail" "${enc[@]}" "$work/single.wav"
+  local start
+  start=$(awk -v t="$(click_onset "$1")" 'BEGIN{t-=0.002; if (t<0) t=0; printf "%.5f", t}')
+  ffmpeg -hide_banner -loglevel error -y -ss "$start" -i "$1" -af "afade=t=in:d=0.001,$tail" "${enc[@]}" "$work/single.wav"
   local gain=0
   [ "$3" = yes ] && gain=$(awk -v p="$(peak_db "$work/single.wav")" 'BEGIN{printf "%.2f", -4 - p}')
   ffmpeg -hide_banner -loglevel error -y -i "$work/single.wav" -af "volume=${gain}dB" "${enc[@]}" "$2"

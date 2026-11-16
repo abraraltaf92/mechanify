@@ -22,6 +22,7 @@ final class AppState: ObservableObject {
     private let engine = SoundEngine()
     private let listener = KeyListener()
     private var permissionTimer: Timer?
+    private let counter = KeyCounter()
 
     init() {
         let profilesDir = Bundle.main.resourceURL?.appendingPathComponent("Profiles")
@@ -39,8 +40,31 @@ final class AppState: ObservableObject {
 
         // Runs on the listener's own thread and goes straight to the engine,
         // never through the main thread.
-        listener.onKey = { [engine] event in engine.handle(event) }
+        listener.onKey = { [engine, counter] event in
+            counter.count(event)
+            engine.handle(event)
+        }
         startListening()
+        runDiagnosticsIfAsked()
+    }
+
+    // MARK: Diagnostics
+
+    /// `Mechanify --diagnose <seconds>`: after that long, prints how many key presses and
+    /// releases arrived, how many clicks were played and how loud the output got, then
+    /// quits. Counts only; which keys were pressed is never recorded.
+    private func runDiagnosticsIfAsked() {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--diagnose") else { return }
+        let seconds = args.indices.contains(i + 1) ? Double(args[i + 1]) ?? 15 : 15
+        print("diagnose: listening for \(Int(seconds)) s, permission \(hasPermission), profile \(profileID)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [self] in
+            let c = counter.snapshot()
+            print(String(format: "diagnose: key downs %d, key ups %d, clicks played %d, peak output %.3f, latency %.1f ms",
+                         c.downs, c.ups, engine.clicksStarted, engine.peakOutput, engine.outputLatencyMs))
+            fflush(stdout)
+            NSApplication.shared.terminate(nil)
+        }
     }
 
     // MARK: Permission
@@ -105,4 +129,19 @@ final class AppState: ObservableObject {
         }
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
+}
+
+/// Thread-safe tally of key events for diagnostics (counts only, never which key).
+final class KeyCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var downs = 0
+    private var ups = 0
+
+    func count(_ event: KeyEvent) {
+        lock.withLock {
+            if case .down = event { downs += 1 } else { ups += 1 }
+        }
+    }
+
+    func snapshot() -> (downs: Int, ups: Int) { lock.withLock { (downs, ups) } }
 }

@@ -68,6 +68,21 @@ stale grant: `tccutil reset ListenEvent local.keyboardsounds`, then relaunch and
 scripts/test.sh
 ```
 
+The suite renders the engine's output offline and measures the actual samples: every
+profile plays presses and releases, a click starts within 3 ms of the key event and is
+heard within 15 ms, panning is exact from the first sample, volume, on/off and release
+toggles work, profile switches (44.1 ↔ 96 kHz) keep playing, device changes recover,
+floods of keystrokes and multi-threaded typing are safe, and every bundled clip starts on
+its click and never clips.
+
+`Mechanify --diagnose <seconds>` runs the real app with your real permission and, after
+that many seconds, prints how many key presses and releases it heard, how many clicks it
+played and the peak output level (counts only, never which keys), then quits:
+
+```bash
+open -n --stdout /tmp/mechanify-diagnose.txt build/Mechanify.app --args --diagnose 30
+```
+
 ## Releasing
 
 Bump `version` in `scripts/build-app.sh`, then:
@@ -83,7 +98,8 @@ Attach the `.dmg` to a GitHub release tagged `v<version>`.
 | Piece | File | Job |
 | --- | --- | --- |
 | `KeyListener` | `Sources/MechanifyCore/KeyListener.swift` | Listen-only `CGEventTap` for key-down and key-up on its own thread; skips auto-repeat; re-enables itself if macOS disables the tap |
-| `SoundEngine` | `Sources/MechanifyCore/SoundEngine.swift` | `AVAudioEngine` with all samples preloaded, a pool of 16 panned player nodes used in rotation, and a small output buffer |
+| `SoundEngine` | `Sources/MechanifyCore/SoundEngine.swift` | Loads profiles (converted once to 48 kHz with the highest-quality converter and cached), places each click by key position, keeps the output buffer small, recovers from output-device changes |
+| `VoiceMixer` | `Sources/MechanifyCore/VoiceMixer.swift` | Real-time mixer inside one audio source node: a click starts on the very next 2.7 ms output slice, up to 32 overlap, and the audio thread never allocates or waits |
 | `RoundRobin`, `SamplePicker` | `Sources/MechanifyCore/Selection.swift` | Voice rotation and random sample choice (never the same sample twice in a row) |
 | `KeyLayout` | `Sources/MechanifyCore/KeyLayout.swift` | Key code → left-right stereo position on a Mac keyboard |
 | `SoundProfile` | `Sources/MechanifyCore/SoundProfile.swift` | A profile is a folder under `Resources/Profiles` with `down/` (presses) and `up/` (releases) |

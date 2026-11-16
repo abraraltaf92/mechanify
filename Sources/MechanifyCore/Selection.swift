@@ -1,21 +1,3 @@
-/// Hands out player indices in rotation, so a new keystroke uses the voice that
-/// has been idle longest and overlapping keystrokes never cut each other off
-/// (as long as typing stays under `count` keys per sample length).
-public struct RoundRobin {
-    public let count: Int
-    private var next = 0
-
-    public init(count: Int) {
-        precondition(count > 0, "RoundRobin needs at least one slot")
-        self.count = count
-    }
-
-    public mutating func take() -> Int {
-        defer { next = (next + 1) % count }
-        return next
-    }
-}
-
 /// Picks a random sample index, never the same one twice in a row, so repeated
 /// keystrokes don't sound machine-identical.
 public struct SamplePicker<G: RandomNumberGenerator> {

@@ -14,11 +14,6 @@ struct SeededGenerator: RandomNumberGenerator {
     }
 }
 
-@Test func roundRobinCyclesThroughEverySlot() {
-    var rr = RoundRobin(count: 4)
-    #expect((0..<9).map { _ in rr.take() } == [0, 1, 2, 3, 0, 1, 2, 3, 0])
-}
-
 @Test func pickerNeverRepeatsBackToBack() {
     var picker = SamplePicker(generator: SeededGenerator(state: 42))
     var previous: Int?

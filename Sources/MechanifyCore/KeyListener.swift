@@ -75,7 +75,8 @@ public final class KeyListener {
         runLoop = nil
     }
 
-    fileprivate func handle(_ type: CGEventType, _ event: CGEvent) {
+    /// Turns one tapped event into a `KeyEvent` (internal so tests can feed it events).
+    func handle(_ type: CGEventType, _ event: CGEvent) {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             // macOS disables taps whose callback stalls; switch it straight back on.
