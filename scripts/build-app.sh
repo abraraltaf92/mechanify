@@ -36,10 +36,16 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc signature (no developer certificate needed). macOS ties the Input
-# Monitoring grant to the signature, so after a rebuild you may need to toggle
-# the app off and on again in System Settings.
-codesign --force --sign - --identifier "$bundle_id" "$app"
+# macOS ties the Input Monitoring grant to the signature. With the local identity
+# from scripts/setup-signing.sh the signature stays the same across rebuilds, so the
+# grant survives. Without it, fall back to ad-hoc (the grant is lost on each rebuild).
+identity="Keyboard Sounds Local Signing"
+if security find-certificate -c "$identity" >/dev/null 2>&1; then
+  codesign --force --sign "$identity" --identifier "$bundle_id" "$app"
+else
+  echo "warning: \"$identity\" not found (run scripts/setup-signing.sh); signing ad hoc" >&2
+  codesign --force --sign - --identifier "$bundle_id" "$app"
+fi
 echo "Built $app"
 
 if [[ "${1:-}" == "--install" ]]; then

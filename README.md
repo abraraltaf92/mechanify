@@ -28,9 +28,15 @@ On first launch macOS asks for **Input Monitoring** access. Turn on *Keyboard So
 System Settings → Privacy & Security → Input Monitoring (the menu has a button that opens
 that page). Sounds start within a couple of seconds; no relaunch needed.
 
-The app is ad-hoc signed, and macOS ties the permission to the signature. After a
-rebuild, if sounds stop, remove the old entry from the Input Monitoring list (or toggle it
-off and on) and allow it again.
+macOS ties the permission to the app's signature. Run this once so every build is signed
+with the same local certificate and the permission survives rebuilds:
+
+```bash
+scripts/setup-signing.sh   # adds "Keyboard Sounds Local Signing" to your login keychain
+```
+
+Without it, builds are ad-hoc signed and each rebuild loses the permission. To clear a
+stale grant: `tccutil reset ListenEvent local.keyboardsounds`, then relaunch and allow it.
 
 ## Tests
 
