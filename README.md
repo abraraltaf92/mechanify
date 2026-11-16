@@ -1,4 +1,4 @@
-# Keyboard Sounds
+# Mechanify
 
 A small macOS menu-bar app that plays a keyboard click every time you press a key,
 in any app.
@@ -15,8 +15,8 @@ in any app.
 Requires macOS 14+ and the Swift toolchain (Xcode or just the Command Line Tools).
 
 ```bash
-scripts/build-app.sh            # builds build/Keyboard Sounds.app
-open "build/Keyboard Sounds.app"
+scripts/build-app.sh            # builds build/Mechanify.app
+open "build/Mechanify.app"
 ```
 
 `scripts/build-app.sh --install` also copies the app to `~/Applications`, which is the
@@ -24,7 +24,7 @@ best place for it if you turn on **Launch at login**.
 
 ### Permission
 
-On first launch macOS asks for **Input Monitoring** access. Turn on *Keyboard Sounds* in
+On first launch macOS asks for **Input Monitoring** access. Turn on *Mechanify* in
 System Settings → Privacy & Security → Input Monitoring (the menu has a button that opens
 that page). Sounds start within a couple of seconds; no relaunch needed.
 
@@ -48,11 +48,11 @@ scripts/test.sh
 
 | Piece | File | Job |
 | --- | --- | --- |
-| `KeyListener` | `Sources/KeyboardSoundsCore/KeyListener.swift` | Listen-only `CGEventTap` for key-down; skips auto-repeat; re-enables itself if macOS disables the tap |
-| `SoundEngine` | `Sources/KeyboardSoundsCore/SoundEngine.swift` | `AVAudioEngine` with all samples preloaded and a pool of 12 player nodes used in rotation, so fast typing overlaps cleanly |
-| `RoundRobin`, `SamplePicker` | `Sources/KeyboardSoundsCore/Selection.swift` | Voice rotation and random sample choice (never the same sample twice in a row) |
-| `SoundProfile` | `Sources/KeyboardSoundsCore/SoundProfile.swift` | A profile is a folder of WAVs under `Resources/Profiles` |
-| `AppState`, menu | `Sources/KeyboardSounds/` | Settings, permission flow, launch at login, SwiftUI `MenuBarExtra` |
+| `KeyListener` | `Sources/MechanifyCore/KeyListener.swift` | Listen-only `CGEventTap` for key-down; skips auto-repeat; re-enables itself if macOS disables the tap |
+| `SoundEngine` | `Sources/MechanifyCore/SoundEngine.swift` | `AVAudioEngine` with all samples preloaded and a pool of 12 player nodes used in rotation, so fast typing overlaps cleanly |
+| `RoundRobin`, `SamplePicker` | `Sources/MechanifyCore/Selection.swift` | Voice rotation and random sample choice (never the same sample twice in a row) |
+| `SoundProfile` | `Sources/MechanifyCore/SoundProfile.swift` | A profile is a folder of WAVs under `Resources/Profiles` |
+| `AppState`, menu | `Sources/Mechanify/` | Settings, permission flow, launch at login, SwiftUI `MenuBarExtra` |
 
 ### Adding a profile
 

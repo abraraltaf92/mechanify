@@ -1,4 +1,4 @@
-# Design — Keyboard Sounds (v1)
+# Design — Mechanify (v1)
 
 Date: 2026-11-16
 

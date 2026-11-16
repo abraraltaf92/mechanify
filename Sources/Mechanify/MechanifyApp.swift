@@ -1,8 +1,8 @@
-import KeyboardSoundsCore
+import MechanifyCore
 import SwiftUI
 
 @main
-struct KeyboardSoundsApp: App {
+struct MechanifyApp: App {
     @StateObject private var state = AppState()
 
     var body: some Scene {
@@ -20,7 +20,7 @@ struct MenuContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("Keyboard sounds", isOn: $state.enabled)
+            Toggle("Mechanify", isOn: $state.enabled)
                 .toggleStyle(.switch)
                 .font(.headline)
 
@@ -28,7 +28,7 @@ struct MenuContent: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Input Monitoring permission needed", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                    Text("Turn on Keyboard Sounds under Privacy & Security → Input Monitoring. Sounds start automatically once it's on.\n\nAlready on? It belongs to an older build. Select it, remove it with −, then add this app again (or turn it on when it reappears).")
+                    Text("Turn on Mechanify under Privacy & Security → Input Monitoring. Sounds start automatically once it's on.\n\nAlready on? It belongs to an older build. Select it, remove it with −, then add this app again (or turn it on when it reappears).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

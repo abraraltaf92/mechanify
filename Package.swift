@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "KeyboardSounds",
+    name: "Mechanify",
     platforms: [.macOS(.v14)],
     targets: [
-        .target(name: "KeyboardSoundsCore"),
-        .executableTarget(name: "KeyboardSounds", dependencies: ["KeyboardSoundsCore"]),
-        .testTarget(name: "KeyboardSoundsCoreTests", dependencies: ["KeyboardSoundsCore"]),
+        .target(name: "MechanifyCore"),
+        .executableTarget(name: "Mechanify", dependencies: ["MechanifyCore"]),
+        .testTarget(name: "MechanifyCoreTests", dependencies: ["MechanifyCore"]),
     ],
     swiftLanguageModes: [.v5]
 )

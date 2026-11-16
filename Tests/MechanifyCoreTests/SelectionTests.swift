@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import KeyboardSoundsCore
+@testable import MechanifyCore
 
 /// Deterministic generator for repeatable tests (SplitMix64).
 struct SeededGenerator: RandomNumberGenerator {

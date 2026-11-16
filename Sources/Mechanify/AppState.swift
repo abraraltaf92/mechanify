@@ -1,5 +1,5 @@
 import AppKit
-import KeyboardSoundsCore
+import MechanifyCore
 import ServiceManagement
 import SwiftUI
 
