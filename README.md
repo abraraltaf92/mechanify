@@ -105,6 +105,49 @@ scripts/package-dmg.sh   # builds dist/Mechanify-<version>.dmg and its SHA-256
 
 Attach the `.dmg` to a GitHub release tagged `v<version>`.
 
+## FAQ
+
+**Why is it silent when I type a password?**
+When the cursor is in a password field, macOS turns on *Secure Input*. While it's on, macOS
+stops delivering key presses to every app that listens to the keyboard, so no app (and no
+keylogger) can see what you type. Mechanify receives nothing in that moment, so there's
+nothing to play. As soon as you leave the password field, clicks come back. This is a macOS
+security feature, and every keyboard-sound app behaves the same way.
+
+**It's silent in one particular app, even in a normal text box. Why?**
+Some apps turn on Secure Input in their own text fields, not just in password boxes
+(password managers, terminals with "Secure Keyboard Entry", and a few others). While that
+app has it on, macOS hides key presses from every other app, Mechanify included. The app
+holding it decides; Mechanify can't change it.
+
+**Is it silent on the lock screen or login window?**
+Yes. macOS doesn't let any app react to keys there.
+
+**I connected a keyboard and it doesn't click. Is that a bug?**
+No, that's on purpose. The Mac's built-in keyboard clicks, but every other keyboard starts
+quiet, because an external keyboard is often a mechanical one that already makes its own
+sound. To have a quiet keyboard click, open the menu-bar icon and choose **Play Sounds on It**
+(shown the first time you type on it), or switch it on under **Settings → Keyboards**. The
+choice is remembered.
+
+**Why are clicks late with AirPods or other Bluetooth headphones?**
+Bluetooth audio adds about 100–200 ms of delay, and no app can remove it. Choose the built-in
+speakers or wired headphones under **Play clicks on**. Your music can stay on Bluetooth.
+
+**Why do keys typed by automation or remapping tools not click?**
+Mechanify only reacts to physical key presses on a real keyboard.
+
+**How can I check what Mechanify is receiving?**
+Run the diagnostic, then type for 30 seconds:
+
+```bash
+open -n --stdout /tmp/mechanify-diagnose.txt /Applications/Mechanify.app --args --diagnose 30
+```
+
+`/tmp/mechanify-diagnose.txt` then shows, one line per second, whether Secure Input is on
+(and which app turned it on) and how many key presses arrived, followed by totals for
+presses, releases and clicks played. It records counts only, never which keys.
+
 ## How it works
 
 | Piece | File | Job |
